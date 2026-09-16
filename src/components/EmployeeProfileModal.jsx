@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getScheduleForDate } from '../lib/supabase';
 import MonthCalendar from './MonthCalendar';
 
 const DAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -231,6 +232,11 @@ export default function EmployeeProfileModal({emp, month, onMonthChange, records
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">✕</button>
+        </div>
+
+        {/* Schedule history note */}
+        <div className="px-4 py-2 bg-sky-50 border-b border-sky-100 flex-shrink-0">
+          <p className="text-xs text-sky-600">📅 Los horarios se muestran según la vigencia del mes seleccionado</p>
         </div>
 
         {/* Month picker */}

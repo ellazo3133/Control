@@ -115,19 +115,53 @@ export const getAllSchedules = async () => {
 
 export const upsertSchedules = async (employeeId, scheduleMap) => {
   // scheduleMap: { 0: {active,start_time,end_time}, 1: {...}, ... }
+  const today = new Date().toISOString().split('T')[0];
+
+  // 1. Close all currently active schedules (set effective_to = yesterday)
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayISO = yesterday.toISOString().split('T')[0];
+
+  await supabase
+    .from('schedules')
+    .update({ effective_to: yesterdayISO })
+    .eq('employee_id', employeeId)
+    .is('effective_to', null); // only currently active ones
+
+  // 2. Insert new schedule rows effective from today
   const rows = Object.entries(scheduleMap).map(([dow, s]) => ({
-    employee_id: employeeId,
-    day_of_week: parseInt(dow),
-    start_time: s.start_time,
-    end_time: s.end_time,
+    employee_id:       employeeId,
+    day_of_week:       parseInt(dow),
+    start_time:        s.start_time || s.start || '09:00',
+    end_time:          s.end_time   || s.end   || '17:00',
     tolerance_minutes: s.tolerance_minutes || 0,
-    active: s.active,
+    active:            s.active !== false,
+    effective_from:    today,
+    effective_to:      null, // currently active
   }));
 
-  const { error } = await supabase
+  if (rows.length > 0) {
+    const { error } = await supabase.from('schedules').insert(rows);
+    if (error) throw error;
+  }
+};
+
+// Get schedule valid for a specific date (for historical analysis)
+export const getScheduleForDate = async (employeeId, date) => {
+  const { data, error } = await supabase
     .from('schedules')
-    .upsert(rows, { onConflict: 'employee_id,day_of_week' });
-  if (error) throw error;
+    .select('*')
+    .eq('employee_id', employeeId)
+    .eq('active', true)
+    .lte('effective_from', date)
+    .or(`effective_to.is.null,effective_to.gte.${date}`)
+    .order('effective_from', { ascending: false });
+  if (error) return {};
+  const map = {};
+  (data || []).forEach(s => {
+    if (!map[s.day_of_week]) map[s.day_of_week] = s; // take most recent
+  });
+  return map;
 };
 
 // ─── HOLIDAYS ─────────────────────────────────────────────────────────────────

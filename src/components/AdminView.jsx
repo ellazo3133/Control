@@ -380,7 +380,11 @@ export default function AdminView({profile,onLogout}){
   // Edit schedules
   const openEditSched=emp=>{setEditEmpId(emp.id);setEditEmpSched(empSchedMap[emp.id]||{});};
   const saveEmpSched=async()=>{
-    try{await upsertSchedules(editEmpId,editEmpSched);await loadAll();setEditEmpId(null);showToast('Horario actualizado');}
+    try{
+      await upsertSchedules(editEmpId,editEmpSched);
+      await loadAll();setEditEmpId(null);
+      showToast('Horario actualizado — aplica desde hoy');
+    }
     catch(e){showToast(e.message,'error');}
   };
 
