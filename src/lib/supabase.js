@@ -208,7 +208,7 @@ export const getRecordsByDate = async (date) => {
     .from('attendance_records')
     .select('*, profiles!attendance_records_employee_id_fkey(name, avatar, email)')
     .eq('date', date)
-    .order('check_in_at');
+    .order('check_in');
   if (error) throw error;
   return data || [];
 };
@@ -233,7 +233,7 @@ export const getFilteredRecords = async ({ date, employeeId }) => {
     .from('attendance_records')
     .select('*, profiles!attendance_records_employee_id_fkey(name, avatar, email)')
     .order('date', { ascending: false })
-    .order('check_in_at', { ascending: false });
+    .order('check_in', { ascending: false });
   if (date) q = q.eq('date', date);
   if (employeeId && employeeId !== 'all') q = q.eq('employee_id', employeeId);
   const { data, error } = await q;
@@ -247,19 +247,19 @@ export const checkIn = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, 
 
   // Verificar que no hay entrada hoy
   const existing = await getTodayRecord(employeeId);
-  if (existing?.check_in_at) throw new Error('Ya registraste tu entrada hoy');
+  if (existing?.check_in) throw new Error('Ya registraste tu entrada hoy');
 
   if (existing) {
     // Actualizar registro existente (ej: creado por admin como ausente)
     const { data, error } = await supabase
       .from('attendance_records')
       .update({
-        check_in_at: now,
-        check_in_lat: lat,
-        check_in_lng: lng,
+        check_in: now,
+        check_in_latitude: lat,
+        check_in_longitude: lng,
         check_in_accuracy: accuracy,
-        check_in_distance: distanceFromHQ,
-        check_in_bio_cred: bioCredId,
+        check_in_distance_meters: distanceFromHQ,
+        check_in_method: bioCredId,
         status: 'present',
         minutes_late: minutesLate || 0,
       })
@@ -276,12 +276,12 @@ export const checkIn = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, 
     .insert({
       employee_id: employeeId,
       date: today,
-      check_in_at: now,
-      check_in_lat: lat,
-      check_in_lng: lng,
+      check_in: now,
+      check_in_latitude: lat,
+      check_in_longitude: lng,
       check_in_accuracy: accuracy,
-      check_in_distance: distanceFromHQ,
-      check_in_bio_cred: bioCredId,
+      check_in_distance_meters: distanceFromHQ,
+      check_in_method: bioCredId,
       status: 'present',
       minutes_late: minutesLate || 0,
     })
@@ -293,21 +293,21 @@ export const checkIn = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, 
 
 export const checkOut = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, bioCredId }) => {
   const existing = await getTodayRecord(employeeId);
-  if (!existing?.check_in_at) throw new Error('No tenés entrada registrada hoy');
-  if (existing?.check_out_at) throw new Error('Ya registraste tu salida hoy');
+  if (!existing?.check_in) throw new Error('No tenés entrada registrada hoy');
+  if (existing?.check_out) throw new Error('Ya registraste tu salida hoy');
 
   const now = new Date().toISOString();
-  const minutesWorked = Math.round((new Date(now) - new Date(existing.check_in_at)) / 60000);
+  const minutesWorked = Math.round((new Date(now) - new Date(existing.check_in)) / 60000);
 
   const { data, error } = await supabase
     .from('attendance_records')
     .update({
-      check_out_at: now,
-      check_out_lat: lat,
-      check_out_lng: lng,
+      check_out: now,
+      check_out_latitude: lat,
+      check_out_longitude: lng,
       check_out_accuracy: accuracy,
-      check_out_distance: distanceFromHQ,
-      check_out_bio_cred: bioCredId,
+      check_out_distance_meters: distanceFromHQ,
+      check_out_method: bioCredId,
       minutes_worked: minutesWorked,
     })
     .eq('id', existing.id)

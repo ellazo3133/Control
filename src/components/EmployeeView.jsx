@@ -19,12 +19,12 @@ const minsToTime = m => { const h=Math.floor(Math.abs(m)/60); const mm=Math.abs(
 
 // Calcula métricas de la jornada
 const calcJornada = (record, sched) => {
-  if (!sched?.active || !record?.check_in_at) return null;
+  if (!sched?.active || !record?.check_in) return null;
   const expectedStart = timeToMins(sched.start_time);
   const expectedEnd   = timeToMins(sched.end_time);
   const expectedHours = expectedEnd - expectedStart; // minutos esperados
 
-  const checkInDate = new Date(record.check_in_at);
+  const checkInDate = new Date(record.check_in);
   const actualStart = checkInDate.getHours()*60 + checkInDate.getMinutes();
   const lateMinutes = Math.max(0, actualStart - expectedStart - TOLERANCE_MINUTES);
   const isLate = lateMinutes > 0;
@@ -33,8 +33,8 @@ const calcJornada = (record, sched) => {
   const mustLeaveAt = expectedEnd + (isLate ? lateMinutes : 0);
 
   let horasExtra = 0, horasFaltantes = 0, workedMinutes = 0;
-  if (record.check_out_at) {
-    const checkOutDate = new Date(record.check_out_at);
+  if (record.check_out) {
+    const checkOutDate = new Date(record.check_out);
     const actualEnd = checkOutDate.getHours()*60 + checkOutDate.getMinutes();
     workedMinutes = actualEnd - actualStart;
     const diff = workedMinutes - expectedHours;
@@ -298,7 +298,7 @@ function JornadaStatus({jornada,sched,todayRec}) {
   if(!jornada||!sched)return null;
   const items=[];
 
-  if(!todayRec?.check_out_at){
+  if(!todayRec?.check_out){
     // Todavía en turno
     if(jornada.isLate){
       items.push({icon:'⏰',label:'Llegaste tarde',value:`+${jornada.lateMinutes}min`,color:'text-amber-600',bg:'bg-amber-50 border-amber-100'});
@@ -385,13 +385,13 @@ export default function EmployeeView({profile,onLogout}) {
   const todaySched=schedule[todayDow];
   const isHoliday=holidays.some(h=>h.date===localDateISO());
   const jornada=calcJornada(todayRec,todaySched);
-  const workedMin=todayRec?.check_in_at&&todayRec?.check_out_at?Math.round((new Date(todayRec.check_out_at)-new Date(todayRec.check_in_at))/60000):null;
+  const workedMin=todayRec?.check_in&&todayRec?.check_out?Math.round((new Date(todayRec.check_out)-new Date(todayRec.check_in))/60000):null;
 
   const last14=Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()-13+i);return d.toISOString().split('T')[0];});
   const getStatus=date=>{
     if(holidays.some(h=>h.date===date))return'holiday';
     const rec=history.find(r=>r.date===date);
-    if(rec?.check_in_at)return'present';if(rec?.status==='justified')return'justified';
+    if(rec?.check_in)return'present';if(rec?.status==='justified')return'justified';
     const dow=new Date(date+'T12:00:00').getDay();
     if(!schedule[dow]?.active)return'off';if(date>localDateISO())return'future';return'absent';
   };
@@ -453,17 +453,17 @@ export default function EmployeeView({profile,onLogout}) {
               {/* Horario esperado vs real */}
               {todaySched?.active&&(
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className={`rounded-2xl p-4 text-center ${todayRec?.check_in_at?jornada?.isLate?'bg-amber-50':'bg-sky-50':'bg-gray-50'}`}>
+                  <div className={`rounded-2xl p-4 text-center ${todayRec?.check_in?jornada?.isLate?'bg-amber-50':'bg-sky-50':'bg-gray-50'}`}>
                     <p className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Entrada</p>
-                    <p className={`text-2xl font-black font-mono ${todayRec?.check_in_at?jornada?.isLate?'text-amber-600':'text-sky-700':'text-gray-300'}`}>
-                      {todayRec?.check_in_at?fmtTime(todayRec.check_in_at):'--:--'}
+                    <p className={`text-2xl font-black font-mono ${todayRec?.check_in?jornada?.isLate?'text-amber-600':'text-sky-700':'text-gray-300'}`}>
+                      {todayRec?.check_in?fmtTime(todayRec.check_in):'--:--'}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">Esperado: {todaySched.start_time?.slice(0,5)}</p>
                   </div>
-                  <div className={`rounded-2xl p-4 text-center ${todayRec?.check_out_at?jornada?.horasExtra>0?'bg-emerald-50':jornada?.horasFaltantes>0?'bg-red-50':'bg-emerald-50':'bg-gray-50'}`}>
+                  <div className={`rounded-2xl p-4 text-center ${todayRec?.check_out?jornada?.horasExtra>0?'bg-emerald-50':jornada?.horasFaltantes>0?'bg-red-50':'bg-emerald-50':'bg-gray-50'}`}>
                     <p className="text-xs font-bold text-gray-400 mb-1 uppercase tracking-wide">Salida</p>
-                    <p className={`text-2xl font-black font-mono ${todayRec?.check_out_at?jornada?.horasExtra>0?'text-emerald-600':jornada?.horasFaltantes>0?'text-red-500':'text-emerald-700':'text-gray-300'}`}>
-                      {todayRec?.check_out_at?fmtTime(todayRec.check_out_at):'--:--'}
+                    <p className={`text-2xl font-black font-mono ${todayRec?.check_out?jornada?.horasExtra>0?'text-emerald-600':jornada?.horasFaltantes>0?'text-red-500':'text-emerald-700':'text-gray-300'}`}>
+                      {todayRec?.check_out?fmtTime(todayRec.check_out):'--:--'}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">Esperado: {todaySched.end_time?.slice(0,5)}</p>
                   </div>
@@ -471,7 +471,7 @@ export default function EmployeeView({profile,onLogout}) {
               )}
 
               {/* Status de jornada */}
-              {todayRec?.check_in_at&&todaySched&&(
+              {todayRec?.check_in&&todaySched&&(
                 <div className="mb-4">
                   <JornadaStatus jornada={jornada} sched={todaySched} todayRec={todayRec}/>
                 </div>
@@ -487,13 +487,13 @@ export default function EmployeeView({profile,onLogout}) {
 
               {/* Botones */}
               <div className="space-y-2.5">
-                {!todayRec?.check_in_at?(
+                {!todayRec?.check_in?(
                   <button onClick={()=>setStepMode('checkin')} disabled={!currentProfile.bio_registered}
                     className="w-full py-4 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40"
                     style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
                     <span>📍</span> Registrar entrada
                   </button>
-                ):!todayRec?.check_out_at?(
+                ):!todayRec?.check_out?(
                   <button onClick={()=>setStepMode('checkout')}
                     className="w-full py-4 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-95"
                     style={{background:'linear-gradient(135deg,#059669,#0d9488)'}}>
@@ -571,26 +571,26 @@ export default function EmployeeView({profile,onLogout}) {
                     const rDow=new Date(r.date+'T12:00:00').getDay();
                     const rSched=schedule[rDow];
                     const rJornada=calcJornada(r,rSched);
-                    const mins=r.check_in_at&&r.check_out_at?Math.round((new Date(r.check_out_at)-new Date(r.check_in_at))/60000):null;
+                    const mins=r.check_in&&r.check_out?Math.round((new Date(r.check_out)-new Date(r.check_in))/60000):null;
                     return(
                       <div key={r.id} className="py-3 px-4 rounded-2xl bg-gray-50 space-y-1.5">
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-bold text-gray-800">{fmtDate(r.date)}</p>
                           <div className="flex gap-1.5">
-                            {r.status==='present'&&<Badge color={r.check_out_at?'teal':'green'}>{r.check_out_at?'Completa':'Presente'}</Badge>}
+                            {r.status==='present'&&<Badge color={r.check_out?'teal':'green'}>{r.check_out?'Completa':'Presente'}</Badge>}
                             {r.status==='absent'&&<Badge color="red">Ausente</Badge>}
                             {r.status==='justified'&&<Badge color="yellow">Justificada</Badge>}
                             {r.status==='holiday'&&<Badge color="purple">Feriado</Badge>}
                           </div>
                         </div>
-                        {r.check_in_at&&(
+                        {r.check_in&&(
                           <div className="flex items-center gap-3 text-xs text-gray-500">
-                            <span>↓ <span className="font-mono font-bold text-gray-700">{fmtTime(r.check_in_at)}</span>
+                            <span>↓ <span className="font-mono font-bold text-gray-700">{fmtTime(r.check_in)}</span>
                               <span className="text-gray-400"> (esp: {rSched?.start_time?.slice(0,5)||'—'})</span>
                               {(r.minutes_late||0)>0&&<span className="text-amber-500 ml-1">+{r.minutes_late}min tarde</span>}
                             </span>
-                            {r.check_out_at&&(
-                              <span>↑ <span className="font-mono font-bold text-gray-700">{fmtTime(r.check_out_at)}</span>
+                            {r.check_out&&(
+                              <span>↑ <span className="font-mono font-bold text-gray-700">{fmtTime(r.check_out)}</span>
                                 <span className="text-gray-400"> (esp: {rSched?.end_time?.slice(0,5)||'—'})</span>
                               </span>
                             )}

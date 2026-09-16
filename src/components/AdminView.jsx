@@ -73,17 +73,17 @@ const ScheduleEditor=({schedule,onChange})=>(
 function EditRecModal({rec,onSave,onClose,adminId}){
   const [status,setStatus]=useState(rec.status||'present');
   const [just,setJust]=useState(rec.justification||'');
-  const [ci,setCi]=useState(rec.check_in_at?new Date(rec.check_in_at).toTimeString().slice(0,5):'');
-  const [co,setCo]=useState(rec.check_out_at?new Date(rec.check_out_at).toTimeString().slice(0,5):'');
+  const [ci,setCi]=useState(rec.check_in?new Date(rec.check_in).toTimeString().slice(0,5):'');
+  const [co,setCo]=useState(rec.check_out?new Date(rec.check_out).toTimeString().slice(0,5):'');
   const [reason,setReason]=useState('');
   const [saving,setSaving]=useState(false);
   const doSave=async()=>{
     setSaving(true);
     const patch={status,justification:just||null,
-      check_in_at:ci?new Date(rec.date+'T'+ci+':00').toISOString():null,
-      check_out_at:co?new Date(rec.date+'T'+co+':00').toISOString():null};
-    if(patch.check_in_at&&patch.check_out_at)
-      patch.minutes_worked=Math.round((new Date(patch.check_out_at)-new Date(patch.check_in_at))/60000);
+      check_in:ci?new Date(rec.date+'T'+ci+':00').toISOString():null,
+      check_out:co?new Date(rec.date+'T'+co+':00').toISOString():null};
+    if(patch.check_in&&patch.check_out)
+      patch.minutes_worked=Math.round((new Date(patch.check_out)-new Date(patch.check_in))/60000);
     await onSave(rec.id,patch,reason||'Edición admin');
     setSaving(false);
   };
@@ -331,7 +331,7 @@ export default function AdminView({profile,onLogout}){
       .then(({data})=>setPayrolls(data||[])).catch(()=>{});
   },[analysisMonth]);
 
-  const presentToday=todayRecs.filter(r=>r.check_in_at).length;
+  const presentToday=todayRecs.filter(r=>r.check_in).length;
   const workingToday=employees.filter(e=>empSchedMap[e.id]?.[todayDow]?.active).length;
 
   // Add employee
@@ -427,7 +427,7 @@ export default function AdminView({profile,onLogout}){
       const dow=new Date(date+'T12:00:00').getDay();
       if(!sched[dow]?.active)continue;scheduled++;
       const rec=monthRecs.find(r=>r.employee_id===empId&&r.date===date);
-      if(rec?.check_in_at){present++;if((rec.minutes_late||0)>0){lateMins+=rec.minutes_late;lateCount++;}if(rec.minutes_worked)totalWork+=rec.minutes_worked;}
+      if(rec?.check_in){present++;if((rec.minutes_late||0)>0){lateMins+=rec.minutes_late;lateCount++;}if(rec.minutes_worked)totalWork+=rec.minutes_worked;}
       else if(rec?.status==='justified')justified++;
       else if(new Date(date)<=new Date())absent++;
     }
@@ -492,7 +492,7 @@ export default function AdminView({profile,onLogout}){
                 {employees.filter(e=>empSchedMap[e.id]?.[todayDow]?.active).map(emp=>{
                   const rec=todayRecs.find(r=>r.employee_id===emp.id);
                   const sc=empSchedMap[emp.id]?.[todayDow];
-                  const mins=rec?.check_in_at&&rec?.check_out_at?Math.round((new Date(rec.check_out_at)-new Date(rec.check_in_at))/60000):null;
+                  const mins=rec?.check_in&&rec?.check_out?Math.round((new Date(rec.check_out)-new Date(rec.check_in))/60000):null;
                   return(
                     <div key={emp.id} className="flex items-center gap-3 px-5 py-4">
                       <Avatar initials={emp.avatar} size="sm"/>
@@ -501,10 +501,10 @@ export default function AdminView({profile,onLogout}){
                         <p className="text-xs text-gray-400">{sc?.start_time?.slice(0,5)} – {sc?.end_time?.slice(0,5)}</p>
                       </div>
                       <div className="text-right">
-                        {rec?.check_in_at?<>
-                          <Badge color={rec.check_out_at?'teal':'green'}>{rec.check_out_at?'Jornada completa':'Presente'}</Badge>
+                        {rec?.check_in?<>
+                          <Badge color={rec.check_out?'teal':'green'}>{rec.check_out?'Jornada completa':'Presente'}</Badge>
                           <p className="text-xs text-gray-400 mt-0.5 font-mono">
-                            {fmtTime(rec.check_in_at)}{rec.check_out_at?` → ${fmtTime(rec.check_out_at)}`:''}
+                            {fmtTime(rec.check_in)}{rec.check_out?` → ${fmtTime(rec.check_out)}`:''}
                             {mins?` · ${Math.floor(mins/60)}h${mins%60}m`:''}
                           </p>
                           {(rec.minutes_late||0)>0&&<p className="text-xs text-amber-500">+{rec.minutes_late}min tarde</p>}
@@ -574,7 +574,7 @@ export default function AdminView({profile,onLogout}){
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 divide-y divide-gray-50">
               {filteredRecs.length===0&&<p className="text-sm text-gray-400 text-center py-10">Sin registros</p>}
               {filteredRecs.map(rec=>{
-                const mins=rec.check_in_at&&rec.check_out_at?Math.round((new Date(rec.check_out_at)-new Date(rec.check_in_at))/60000):null;
+                const mins=rec.check_in&&rec.check_out?Math.round((new Date(rec.check_out)-new Date(rec.check_in))/60000):null;
                 return(
                   <div key={rec.id} className="px-5 py-4">
                     <div className="flex items-start gap-3">
@@ -586,14 +586,14 @@ export default function AdminView({profile,onLogout}){
                           {rec.edited_at&&<span className="text-xs text-amber-500">✏️</span>}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap text-xs text-gray-500">
-                          {rec.check_in_at&&<span>↓ <span className="font-mono font-bold">{fmtTime(rec.check_in_at)}</span>{(rec.minutes_late||0)>0&&<span className="text-amber-500 ml-1">+{rec.minutes_late}min</span>}</span>}
-                          {rec.check_out_at&&<span>↑ <span className="font-mono font-bold">{fmtTime(rec.check_out_at)}</span></span>}
+                          {rec.check_in&&<span>↓ <span className="font-mono font-bold">{fmtTime(rec.check_in)}</span>{(rec.minutes_late||0)>0&&<span className="text-amber-500 ml-1">+{rec.minutes_late}min</span>}</span>}
+                          {rec.check_out&&<span>↑ <span className="font-mono font-bold">{fmtTime(rec.check_out)}</span></span>}
                           {mins&&<span className="text-gray-400">· {Math.floor(mins/60)}h{mins%60}m</span>}
                         </div>
                         {rec.justification&&<p className="text-xs text-amber-600 italic mt-0.5">"{rec.justification}"</p>}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {rec.status==='present'&&<Badge color={rec.check_out_at?'teal':'green'}>{rec.check_out_at?'Completa':'Presente'}</Badge>}
+                        {rec.status==='present'&&<Badge color={rec.check_out?'teal':'green'}>{rec.check_out?'Completa':'Presente'}</Badge>}
                         {rec.status==='absent'&&<Badge color="red">Ausente</Badge>}
                         {rec.status==='justified'&&<Badge color="yellow">Justificada</Badge>}
                         {rec.status==='holiday'&&<Badge color="purple">Feriado</Badge>}
