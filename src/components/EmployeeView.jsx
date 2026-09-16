@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePWA } from '../hooks/usePWA';
 import MonthCalendar from './MonthCalendar';
-import { getEmployeePayroll, getEmployeeExtraHours } from '../lib/supabase';
+import { getEmployeePayroll, getEmployeeExtraHours, notifyAdminLate, notifyAdminAbsent, getWeekRecords } from '../lib/supabase';
 import {
   getHQ, getSchedules, getTodayRecord, getRecordsByEmployee,
   getHolidays, checkIn, checkOut, updateProfile,
@@ -355,6 +355,7 @@ export default function EmployeeView({profile,onLogout}) {
   const [calMonth,setCalMonth]=useState(new Date().toISOString().slice(0,7));
   const [payroll,setPayroll]=useState(null);
   const [empExtras,setEmpExtras]=useState([]);
+  const [weekRecs,setWeekRecs]=useState([]);
   const { scheduleCheckoutReminder, notifPermission } = usePWA(); // {tipo, jornada}
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
@@ -377,6 +378,10 @@ export default function EmployeeView({profile,onLogout}) {
     getEmployeeExtraHours(profile.id, calMonth).then(setEmpExtras).catch(()=>{});
   },[calMonth, profile.id]);
 
+  useEffect(()=>{
+    getWeekRecords(profile.id).then(setWeekRecs).catch(()=>{});
+  },[profile.id]);
+
   const handleRegBio=async()=>{
     if(!window.PublicKeyCredential)return showToast('Tu navegador no soporta biometría.','error');
     setBioLoading(true);
@@ -391,6 +396,14 @@ export default function EmployeeView({profile,onLogout}) {
   const handleStepDone=(tipo,jornada)=>{
     loadData();
     setCelebration({tipo,jornada});
+    // Notify admin if late
+    if(tipo==='checkin_tarde'&&jornada){
+      const dow=new Date().getDay();
+      const sched=schedule[dow];
+      if(sched){
+        notifyAdminLate(currentProfile.name, jornada.lateMinutes, sched.start_time?.slice(0,5)).catch(()=>{});
+      }
+    }
     // Schedule checkout reminder if checked in
     if(tipo==='checkin_ok'||tipo==='checkin_tarde'){
       const mustLeave=jornada?.mustLeaveAt;
@@ -533,6 +546,52 @@ export default function EmployeeView({profile,onLogout}) {
             </div>
           </div>
         )}
+
+        {/* Weekly summary */}
+        {weekRecs.length > 0 && (() => {
+          const totalWorked = weekRecs.reduce((a,r) => a+(r.minutes_worked||0), 0);
+          const totalExpected = weekRecs.filter(r=>r.check_in).reduce((a,r) => {
+            const dow = new Date(r.date+'T12:00:00').getDay();
+            const s = schedule[dow];
+            if(!s?.active) return a;
+            return a + (timeToMins(s.end_time) - timeToMins(s.start_time));
+          }, 0);
+          const days = weekRecs.filter(r=>r.check_in).length;
+          const lates = weekRecs.filter(r=>(r.minutes_late||0)>0).length;
+          const totalLate = weekRecs.reduce((a,r)=>a+(r.minutes_late||0),0);
+          const diff = totalWorked - totalExpected;
+          return (
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900 text-sm mb-3">Esta semana</h3>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="bg-sky-50 rounded-2xl p-3.5 text-center">
+                  <p className="text-xs font-bold text-sky-400 uppercase tracking-wide mb-1">Horas trabajadas</p>
+                  <p className="text-2xl font-black text-sky-700">{Math.floor(totalWorked/60)}h {totalWorked%60}m</p>
+                </div>
+                <div className={`${diff>=0?'bg-emerald-50':'bg-amber-50'} rounded-2xl p-3.5 text-center`}>
+                  <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${diff>=0?'text-emerald-400':'text-amber-400'}`}>
+                    {diff>=0?'Horas extra':'Horas faltantes'}
+                  </p>
+                  <p className={`text-2xl font-black ${diff>=0?'text-emerald-700':'text-amber-700'}`}>
+                    {diff>=0?'+':'-'}{Math.floor(Math.abs(diff)/60)}h {Math.abs(diff)%60}m
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 text-xs">
+                <div className="flex-1 bg-gray-50 rounded-xl p-2.5 text-center">
+                  <p className="text-gray-400">Días presentes</p>
+                  <p className="font-black text-gray-700 text-lg">{days}</p>
+                </div>
+                {lates>0&&(
+                  <div className="flex-1 bg-amber-50 rounded-xl p-2.5 text-center">
+                    <p className="text-amber-500">Tardanzas</p>
+                    <p className="font-black text-amber-700 text-lg">{lates} <span className="text-xs font-normal">({totalLate}min)</span></p>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Tabs */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">

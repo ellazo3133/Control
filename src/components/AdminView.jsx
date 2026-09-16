@@ -5,6 +5,7 @@ import { supabase, getAllProfiles, getHolidays, addHoliday, deleteHoliday, getHQ
 import { getHolidaysForYear } from '../data/holidays';
 import EmployeeProfileModal from './EmployeeProfileModal';
 import ExportButton from './ExportButton';
+import NotificationBell from './NotificationBell';
 import MonthCalendar from './MonthCalendar';
 
 const DAYS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -518,7 +519,10 @@ export default function AdminView({profile,onLogout}){
             </div>
             <span className="font-bold text-gray-900 text-sm" style={{fontFamily:"'Playfair Display',serif"}}>Asistencia</span>
           </div>
-          <button onClick={onLogout} className="text-xs text-gray-400 px-3 py-1.5 rounded-xl hover:bg-gray-100">Salir</button>
+          <div className="flex items-center gap-2">
+            <NotificationBell/>
+            <button onClick={onLogout} className="text-xs text-gray-400 px-3 py-1.5 rounded-xl hover:bg-gray-100">Salir</button>
+          </div>
         </div>
       </div>
       <div className="bg-white border-b border-gray-100 overflow-x-auto">

@@ -317,6 +317,76 @@ export const checkOut = async ({ employeeId, lat, lng, accuracy, distanceFromHQ,
   return data;
 };
 
+// ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
+// Send email notification via Supabase (uses Edge Function or direct email)
+// We use a simple approach: insert into a notifications table that triggers an email
+export const notifyAdminLate = async (employeeName, minutesLate, expectedTime, adminEmail) => {
+  // Store notification in DB so admin sees it in the app
+  const { error } = await supabase.from('admin_notifications').insert({
+    type: 'late_arrival',
+    title: `⏰ ${employeeName} llegó tarde`,
+    body: `Llegó ${minutesLate} minutos después de las ${expectedTime}`,
+    read: false,
+    data: { employeeName, minutesLate, expectedTime },
+  });
+  if (error) console.error('Notification error:', error);
+};
+
+export const notifyAdminAbsent = async (employeeName, expectedTime) => {
+  const { error } = await supabase.from('admin_notifications').insert({
+    type: 'absent',
+    title: `✗ ${employeeName} no registró entrada`,
+    body: `Debía entrar a las ${expectedTime} y aún no registró asistencia`,
+    read: false,
+    data: { employeeName, expectedTime },
+  });
+  if (error) console.error('Notification error:', error);
+};
+
+export const getAdminNotifications = async () => {
+  const { data, error } = await supabase
+    .from('admin_notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) return [];
+  return data || [];
+};
+
+export const markNotificationRead = async (id) => {
+  await supabase.from('admin_notifications').update({ read: true }).eq('id', id);
+};
+
+export const markAllNotificationsRead = async () => {
+  await supabase.from('admin_notifications').update({ read: true }).eq('read', false);
+};
+
+// ─── WEEKLY HOURS ─────────────────────────────────────────────────────────────
+export const getWeekRecords = async (employeeId) => {
+  // Get Mon-Sun of current week
+  const today = new Date();
+  const day = today.getDay(); // 0=Sun
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diffToMon);
+  monday.setHours(0,0,0,0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  const start = monday.toISOString().split('T')[0];
+  const end = sunday.toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('attendance_records')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .gte('date', start)
+    .lte('date', end)
+    .order('date');
+  if (error) return [];
+  return data || [];
+};
+
 // Admin: editar registro con auditoría
 export const adminEditRecord = async (recordId, patch, adminId, reason) => {
   // Guardar historial de cambios
