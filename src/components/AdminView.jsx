@@ -399,12 +399,13 @@ export default function AdminView({profile,onLogout}){
 
   // Edit employee data
   const openEditEmp = emp => {
-    setEditEmpData({ emp, form: { name:emp.name, email:emp.email, password:'', avatar:emp.avatar||'' } });
+    setEditEmpData({ emp, form: { name:emp.name, email:emp.email, password:'', avatar:emp.avatar||'', hire_date:emp.hire_date||'' } });
   };
   const saveEditEmp = async () => {
     const {emp, form} = editEmpData;
     const updates = { name:form.name, email:form.email,
-      avatar: form.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() };
+      avatar: form.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(),
+      hire_date: form.hire_date || null };
     await supabase.from('profiles').update(updates).eq('id', emp.id);
     if (form.password) {
       // Update password via admin RPC
@@ -955,6 +956,13 @@ export default function AdminView({profile,onLogout}){
                 onChange={e=>setEditEmpData(p=>({...p,form:{...p.form,password:e.target.value}}))}
                 placeholder="Dejá vacío para no cambiar"
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50"/>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Fecha de alta</label>
+              <input type="date" value={editEmpData.form.hire_date||''}
+                onChange={e=>setEditEmpData(p=>({...p,form:{...p.form,hire_date:e.target.value}}))}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50"/>
+              <p className="text-xs text-gray-400 mt-1">Se usa para calcular días de vacaciones según LCT</p>
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={()=>setEditEmpData(null)}
