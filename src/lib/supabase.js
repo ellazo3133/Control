@@ -351,6 +351,295 @@ export const checkOut = async ({ employeeId, lat, lng, accuracy, distanceFromHQ,
   return data;
 };
 
+// ─── LICENCIAS ESPECIALES ────────────────────────────────────────────────────
+export const LEAVE_TYPES = {
+  sick:        { label:'Licencia por enfermedad',    icon:'🤒', days:{ short:3, max:30 }, law:'Art. 208 LCT — hasta 3 meses (1er año), 6 meses (+ antigüedad)' },
+  maternity:   { label:'Licencia por maternidad',    icon:'🤱', days:{ short:90,max:90 }, law:'Art. 177 LCT — 90 días (45 antes + 45 después del parto)' },
+  paternity:   { label:'Licencia por paternidad',    icon:'👶', days:{ short:2, max:2  }, law:'Art. 158 LCT — 2 días corridos' },
+  bereavement: { label:'Licencia por duelo',         icon:'🕊️', days:{ short:3, max:3  }, law:'Art. 158 LCT — 3 días corridos (familiar directo)' },
+  wedding:     { label:'Licencia por casamiento',    icon:'💍', days:{ short:10,max:10 }, law:'Art. 158 LCT — 10 días corridos' },
+  exam:        { label:'Licencia por examen',        icon:'📚', days:{ short:2, max:10 }, law:'Art. 158 LCT — 2 días por examen, hasta 10 por año' },
+  other:       { label:'Otra licencia',              icon:'📋', days:{ short:1, max:30 }, law:'Según acuerdo' },
+};
+
+export const getLeaveRequests = async (employeeId) => {
+  let q = supabase.from('leave_requests')
+    .select('*, profiles!leave_requests_employee_id_fkey(name,avatar)')
+    .order('created_at', { ascending:false });
+  if (employeeId) q = q.eq('employee_id', employeeId);
+  const { data, error } = await q;
+  if (error) return [];
+  return data || [];
+};
+
+export const getAllLeaveRequests = async () => {
+  const { data, error } = await supabase.from('leave_requests')
+    .select('*, profiles!leave_requests_employee_id_fkey(name,avatar)')
+    .order('created_at', { ascending:false });
+  if (error) return [];
+  return data || [];
+};
+
+export const createLeaveRequest = async ({ employeeId, type, startDate, endDate, reason, createdBy }) => {
+  const days = Math.round((new Date(endDate)-new Date(startDate))/(1000*60*60*24))+1;
+  const { data, error } = await supabase.from('leave_requests')
+    .insert({ employee_id:employeeId, type, start_date:startDate, end_date:endDate, days, reason, created_by:createdBy||employeeId })
+    .select().single();
+  if (error) throw error;
+  const lt = LEAVE_TYPES[type];
+  await supabase.from('admin_notifications').insert({
+    type:'leave_request', title:`${lt?.icon||'📋'} Solicitud de licencia`,
+    body:`${lt?.label||type} — ${days} días (${new Date(startDate+'T12:00:00').toLocaleDateString('es-AR')} al ${new Date(endDate+'T12:00:00').toLocaleDateString('es-AR')})`,
+    data:{ employeeId, type, days },
+  }).catch(()=>{});
+  return data;
+};
+
+export const reviewLeaveRequest = async (id, status, adminNote, adminId) => {
+  const { data, error } = await supabase.from('leave_requests')
+    .update({ status, admin_note:adminNote||null, reviewed_by:adminId, reviewed_at:new Date().toISOString() })
+    .eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+};
+
+// ─── TAREAS ───────────────────────────────────────────────────────────────────
+export const getTasks = async (employeeId) => {
+  const { data, error } = await supabase.from('tasks')
+    .select('*, profiles!tasks_assigned_by_fkey(name,avatar)')
+    .eq('assigned_to', employeeId)
+    .neq('status','cancelled')
+    .order('priority', { ascending:false })
+    .order('due_date', { ascending:true, nullsLast:true })
+    .order('created_at', { ascending:false });
+  if (error) return [];
+  return data || [];
+};
+
+export const getAllTasks = async () => {
+  const { data, error } = await supabase.from('tasks')
+    .select('*, profiles!tasks_assigned_to_fkey(name,avatar), assigner:profiles!tasks_assigned_by_fkey(name)')
+    .neq('status','cancelled')
+    .order('created_at', { ascending:false });
+  if (error) return [];
+  return data || [];
+};
+
+export const createTask = async ({ title, description, assignedTo, assignedBy, dueDate, priority }) => {
+  const { data, error } = await supabase.from('tasks')
+    .insert({ title, description, assigned_to:assignedTo, assigned_by:assignedBy, due_date:dueDate||null, priority:priority||'normal' })
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateTaskStatus = async (id, status) => {
+  const patch = { status };
+  if (status==='done') patch.completed_at = new Date().toISOString();
+  const { data, error } = await supabase.from('tasks').update(patch).eq('id',id).select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteTask = async (id) => {
+  await supabase.from('tasks').update({status:'cancelled'}).eq('id',id);
+};
+
+// ─── ALERTAS INTELIGENTES ─────────────────────────────────────────────────────
+export const getSmartAlerts = async () => {
+  const { data, error } = await supabase.from('smart_alerts')
+    .select('*')
+    .order('created_at', { ascending:false })
+    .limit(100);
+  if (error) return [];
+  return data || [];
+};
+
+export const markAlertRead = async (id) => {
+  await supabase.from('smart_alerts').update({ read:true }).eq('id',id);
+};
+
+export const markAllAlertsRead = async () => {
+  await supabase.from('smart_alerts').update({ read:true }).eq('read',false);
+};
+
+export const generateAlerts = async () => {
+  await supabase.rpc('generate_smart_alerts').catch(()=>{});
+};
+
+// Check alerts client-side (fallback when RPC not available)
+export const checkAlertsClientSide = async (employees, records, vacationBalances) => {
+  const today = new Date().toISOString().split('T')[0];
+  const monthStart = today.slice(0,7)+'-01';
+  const alerts = [];
+
+  for (const emp of employees) {
+    const empRecs = records.filter(r=>r.employee_id===emp.id);
+
+    // 3 tardanzas en últimos 7 días
+    const week7ago = new Date(); week7ago.setDate(week7ago.getDate()-7);
+    const recentLates = empRecs.filter(r=>r.date>=week7ago.toISOString().split('T')[0]&&(r.minutes_late||0)>0);
+    if (recentLates.length>=3) {
+      alerts.push({ type:'consecutive_lates', employee_id:emp.id, employeeName:emp.name,
+        title:`⏰ ${emp.name} — ${recentLates.length} tardanzas en 7 días`,
+        body:`Llegó tarde ${recentLates.length} veces esta semana`, severity:'warning' });
+    }
+
+    // 5+ ausencias en el mes
+    const monthAbsents = empRecs.filter(r=>r.date>=monthStart&&r.status==='absent').length;
+    if (monthAbsents>=5) {
+      alerts.push({ type:'absences_month', employee_id:emp.id, employeeName:emp.name,
+        title:`✗ ${emp.name} — ${monthAbsents} ausencias este mes`,
+        body:`Superó las 5 ausencias injustificadas`, severity:'critical' });
+    }
+
+    // Vacaciones por vencer
+    const bal = vacationBalances?.find(b=>b.employee_id===emp.id);
+    if (bal) {
+      const remaining = bal.days_total-bal.days_taken-bal.days_pending;
+      const yearEnd = new Date(new Date().getFullYear(),11,31);
+      const daysLeft = Math.round((yearEnd-new Date())/(1000*60*60*24));
+      if (remaining>0&&daysLeft<=60) {
+        alerts.push({ type:'vacation_expiring', employee_id:emp.id, employeeName:emp.name,
+          title:`🏖️ ${emp.name} — ${remaining} días de vacaciones sin tomar`,
+          body:`Quedan ${daysLeft} días del año`, severity:'warning' });
+      }
+    }
+  }
+  return alerts;
+};
+
+// ─── LICENCIAS ESPECIALES ────────────────────────────────────────────────────
+
+export const LEAVE_TYPES = {
+  sick:        { label:'Enfermedad',           icon:'🤒', color:'red',    lctDays: null, hint:'3 meses si < 5 años de antigüedad, 6 meses si ≥ 5 años (LCT art.208)' },
+  maternity:   { label:'Maternidad',           icon:'🤱', color:'pink',   lctDays: 90,   hint:'90 días corridos (LCT art.177)' },
+  paternity:   { label:'Paternidad',           icon:'👶', color:'blue',   lctDays: 2,    hint:'2 días corridos (LCT art.158)' },
+  bereavement: { label:'Duelo familiar',       icon:'🕯️', color:'gray',   lctDays: null, hint:'3 días (cónyuge/hijo/padre) o 1 día (hermano) (LCT art.158)' },
+  marriage:    { label:'Casamiento',           icon:'💍', color:'purple', lctDays: 10,   hint:'10 días corridos (LCT art.158)' },
+  exam:        { label:'Examen universitario', icon:'📚', color:'green',  lctDays: 2,    hint:'2 días corridos por examen, máximo 10 días por año (LCT art.158)' },
+  other:       { label:'Otro',                 icon:'📋', color:'gray',   lctDays: null, hint:'Licencia especial acordada con la empresa' },
+};
+
+export const getLctDays = (type, subtype, seniority_years = 0) => {
+  if (type === 'sick') return seniority_years >= 5 ? 180 : 90;
+  if (type === 'bereavement') return subtype === 'sibling' ? 1 : 3;
+  return LEAVE_TYPES[type]?.lctDays || null;
+};
+
+export const getLeaveRequests = async (employeeId) => {
+  let q = supabase.from('leave_requests')
+    .select('*, profiles!leave_requests_employee_id_fkey(name,avatar,hire_date)')
+    .order('created_at', { ascending: false });
+  if (employeeId) q = q.eq('employee_id', employeeId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+};
+
+export const getAllLeaveRequests = async () => {
+  const { data, error } = await supabase.from('leave_requests')
+    .select('*, profiles!leave_requests_employee_id_fkey(name,avatar,hire_date)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createLeaveRequest = async ({ employeeId, type, subtype, startDate, endDate, reason, createdBy='employee' }) => {
+  const days = Math.round((new Date(endDate) - new Date(startDate)) / (1000*60*60*24)) + 1;
+  const { data, error } = await supabase.from('leave_requests')
+    .insert({ employee_id:employeeId, type, subtype:subtype||null, start_date:startDate, end_date:endDate, days, reason, created_by:createdBy, status: createdBy==='admin'?'approved':'pending' })
+    .select().single();
+  if (error) throw error;
+  if (createdBy === 'employee') {
+    await supabase.from('admin_notifications').insert({
+      type:'leave_request',
+      title:`${LEAVE_TYPES[type]?.icon||'📋'} ${data.days} días — ${LEAVE_TYPES[type]?.label}`,
+      body:`Solicitud de licencia del ${new Date(startDate+'T12:00:00').toLocaleDateString('es-AR')} al ${new Date(endDate+'T12:00:00').toLocaleDateString('es-AR')}`,
+      data:{ employeeId, type, days },
+    }).catch(()=>{});
+  }
+  return data;
+};
+
+export const reviewLeaveRequest = async (id, status, adminNote, adminId) => {
+  const { data, error } = await supabase.from('leave_requests')
+    .update({ status, admin_note:adminNote||null, reviewed_by:adminId, reviewed_at:new Date().toISOString() })
+    .eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+};
+
+// ─── TAREAS ───────────────────────────────────────────────────────────────────
+
+export const TASK_PRIORITIES = {
+  low:    { label:'Baja',     color:'gray',   icon:'▽' },
+  normal: { label:'Normal',   color:'blue',   icon:'○' },
+  high:   { label:'Alta',     color:'orange', icon:'△' },
+  urgent: { label:'Urgente',  color:'red',    icon:'⚡' },
+};
+
+export const getMyTasks = async (employeeId) => {
+  const { data, error } = await supabase.from('tasks')
+    .select('*, profiles!tasks_created_by_fkey(name,avatar)')
+    .eq('assigned_to', employeeId)
+    .neq('status', 'done')
+    .order('priority', { ascending: false })
+    .order('due_date', { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getAllTasks = async () => {
+  const { data, error } = await supabase.from('tasks')
+    .select('*, profiles!tasks_assigned_to_fkey(name,avatar), creator:profiles!tasks_created_by_fkey(name)')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createTask = async ({ title, description, assignedTo, dueDate, priority, createdBy }) => {
+  const { data, error } = await supabase.from('tasks')
+    .insert({ title, description, assigned_to:assignedTo, due_date:dueDate||null, priority:priority||'normal', created_by:createdBy, status:'pending' })
+    .select().single();
+  if (error) throw error;
+  await supabase.from('admin_notifications').insert({
+    type:'task_created', title:`📋 Nueva tarea asignada`,
+    body:title, data:{ assignedTo, taskId:data.id },
+  }).catch(()=>{});
+  return data;
+};
+
+export const updateTaskStatus = async (id, status, notes='') => {
+  const patch = { status, updated_at: new Date().toISOString() };
+  if (status === 'done') { patch.completed_at = new Date().toISOString(); patch.notes = notes; }
+  const { data, error } = await supabase.from('tasks').update(patch).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteTask = async (id) => {
+  const { error } = await supabase.from('tasks').delete().eq('id', id);
+  if (error) throw error;
+};
+
+// ─── ALERTAS ─────────────────────────────────────────────────────────────────
+
+export const runAlerts = async () => {
+  const { data } = await supabase.rpc('run_alerts');
+  return data;
+};
+
+export const getAlertConfig = async () => {
+  const { data } = await supabase.from('alert_config').select('*').order('type');
+  return data || [];
+};
+
+export const updateAlertConfig = async (type, updates) => {
+  const { error } = await supabase.from('alert_config').update(updates).eq('type', type);
+  if (error) throw error;
+};
+
 // ─── VACACIONES ──────────────────────────────────────────────────────────────
 
 // Calcula días de vacaciones según LCT (días corridos)
