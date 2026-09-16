@@ -206,7 +206,7 @@ export const getRecordsByEmployee = async (employeeId, limit = 30) => {
 export const getRecordsByDate = async (date) => {
   const { data, error } = await supabase
     .from('attendance_records')
-    .select('*, profiles(name, avatar, email)')
+    .select('*, profiles!attendance_records_employee_id_fkey(name, avatar, email)')
     .eq('date', date)
     .order('check_in_at');
   if (error) throw error;
@@ -220,7 +220,7 @@ export const getRecordsByMonth = async (month) => {
   const end = new Date(y, m, 0).toISOString().split('T')[0]; // last day
   const { data, error } = await supabase
     .from('attendance_records')
-    .select('*, profiles(name, avatar)')
+    .select('*, profiles!attendance_records_employee_id_fkey(name, avatar)')
     .gte('date', start)
     .lte('date', end)
     .order('date');
@@ -231,7 +231,7 @@ export const getRecordsByMonth = async (month) => {
 export const getFilteredRecords = async ({ date, employeeId }) => {
   let q = supabase
     .from('attendance_records')
-    .select('*, profiles(name, avatar, email)')
+    .select('*, profiles!attendance_records_employee_id_fkey(name, avatar, email)')
     .order('date', { ascending: false })
     .order('check_in_at', { ascending: false });
   if (date) q = q.eq('date', date);
