@@ -4,6 +4,7 @@ import { supabase, getAllProfiles, getHolidays, addHoliday, deleteHoliday, getHQ
   adminEditRecord, adminAddManualRecord, localDateISO, getGeoPos } from '../lib/supabase';
 import { getHolidaysForYear } from '../data/holidays';
 import EmployeeProfileModal from './EmployeeProfileModal';
+import ExportButton from './ExportButton';
 
 const DAYS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const DAYS_SHORT=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -783,7 +784,10 @@ export default function AdminView({profile,onLogout}){
           <div className="space-y-5">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <h2 className="text-2xl font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>Análisis</h2>
-              <input type="month" value={analysisMonth} onChange={e=>setAnalysisMonth(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+              <div className="flex gap-2 items-center">
+                <input type="month" value={analysisMonth} onChange={e=>setAnalysisMonth(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+                <ExportButton employees={employees} records={monthRecs} schedMap={empSchedMap} month={analysisMonth} extraHours={extraHoursList} payrolls={payrolls}/>
+              </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {employees.map(emp=>{const s=getStats(emp.id);

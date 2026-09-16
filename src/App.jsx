@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, getProfile, signOut } from './lib/supabase';
 import LoginScreen from './components/LoginScreen';
+import PWABanner from './components/PWABanner';
 import EmployeeView from './components/EmployeeView';
 import AdminView from './components/AdminView';
 
@@ -64,8 +65,8 @@ export default function App() {
   }
 
   if (profile.role === 'admin') {
-    return <AdminView profile={profile} onLogout={handleLogout} />;
+    return <><AdminView profile={profile} onLogout={handleLogout} /><PWABanner/></>;
   }
 
-  return <EmployeeView profile={profile} onLogout={handleLogout} />;
+  return <><EmployeeView profile={profile} onLogout={handleLogout} /><PWABanner/></>;
 }

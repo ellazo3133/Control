@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { usePWA } from '../hooks/usePWA';
 import {
   getHQ, getSchedules, getTodayRecord, getRecordsByEmployee,
   getHolidays, checkIn, checkOut, updateProfile,
@@ -348,7 +349,8 @@ export default function EmployeeView({profile,onLogout}) {
   const [bioLoading,setBioLoading]=useState(false);
   const [currentProfile,setCurrentProfile]=useState(profile);
   const [records,setRecords]=useState([]);
-  const [celebration,setCelebration]=useState(null); // {tipo, jornada}
+  const [celebration,setCelebration]=useState(null);
+  const { scheduleCheckoutReminder, notifPermission } = usePWA(); // {tipo, jornada}
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
 
@@ -379,6 +381,14 @@ export default function EmployeeView({profile,onLogout}) {
   const handleStepDone=(tipo,jornada)=>{
     loadData();
     setCelebration({tipo,jornada});
+    // Schedule checkout reminder if checked in
+    if(tipo==='checkin_ok'||tipo==='checkin_tarde'){
+      const mustLeave=jornada?.mustLeaveAt;
+      if(mustLeave){
+        const h=Math.floor(mustLeave/60),m=mustLeave%60;
+        scheduleCheckoutReminder(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+      }
+    }
   };
 
   const todayDow=new Date().getDay();
