@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePWA } from '../hooks/usePWA';
+import MonthCalendar from './MonthCalendar';
+import { getEmployeePayroll, getEmployeeExtraHours } from '../lib/supabase';
 import {
   getHQ, getSchedules, getTodayRecord, getRecordsByEmployee,
   getHolidays, checkIn, checkOut, updateProfile,
@@ -350,6 +352,9 @@ export default function EmployeeView({profile,onLogout}) {
   const [currentProfile,setCurrentProfile]=useState(profile);
   const [records,setRecords]=useState([]);
   const [celebration,setCelebration]=useState(null);
+  const [calMonth,setCalMonth]=useState(new Date().toISOString().slice(0,7));
+  const [payroll,setPayroll]=useState(null);
+  const [empExtras,setEmpExtras]=useState([]);
   const { scheduleCheckoutReminder, notifPermission } = usePWA(); // {tipo, jornada}
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
@@ -357,7 +362,7 @@ export default function EmployeeView({profile,onLogout}) {
   const loadData=useCallback(async()=>{
     try{
       const [hqData,schedData,recData,histData,holData]=await Promise.all([
-        getHQ(),getSchedules(profile.id),getTodayRecord(profile.id),getRecordsByEmployee(profile.id,30),getHolidays()
+        getHQ(),getSchedules(profile.id),getTodayRecord(profile.id),getRecordsByEmployee(profile.id,60),getHolidays()
       ]);
       setHq(hqData);setSchedule(schedData);setTodayRec(recData);
       setHistory(histData);setHolidays(holData);
@@ -366,6 +371,11 @@ export default function EmployeeView({profile,onLogout}) {
   },[profile.id]);
 
   useEffect(()=>{loadData();},[loadData]);
+
+  useEffect(()=>{
+    getEmployeePayroll(profile.id, calMonth).then(setPayroll).catch(()=>{});
+    getEmployeeExtraHours(profile.id, calMonth).then(setEmpExtras).catch(()=>{});
+  },[calMonth, profile.id]);
 
   const handleRegBio=async()=>{
     if(!window.PublicKeyCredential)return showToast('Tu navegador no soporta biometría.','error');
@@ -526,9 +536,9 @@ export default function EmployeeView({profile,onLogout}) {
 
         {/* Tabs */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex border-b border-gray-100">
-            {[['schedule','Mi horario'],['history','Historial']].map(([t,l])=>(
-              <button key={t} onClick={()=>setTab(t)} className={`flex-1 py-3.5 text-xs font-bold uppercase tracking-wide ${tab===t?'text-sky-600 border-b-2 border-sky-500':'text-gray-400'}`}>{l}</button>
+          <div className="flex border-b border-gray-100 overflow-x-auto">
+            {[['schedule','Horario'],['calendar','Calendario'],['history','Historial'],['sueldo','Mi sueldo']].map(([t,l])=>(
+              <button key={t} onClick={()=>setTab(t)} className={`flex-shrink-0 flex-1 py-3.5 text-xs font-bold uppercase tracking-wide ${tab===t?'text-sky-600 border-b-2 border-sky-500':'text-gray-400'}`}>{l}</button>
             ))}
           </div>
           <div className="p-5">
@@ -555,6 +565,76 @@ export default function EmployeeView({profile,onLogout}) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {tab==='calendar'&&(
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Mes a ver</p>
+                  <input type="month" value={calMonth} onChange={e=>setCalMonth(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+                </div>
+                <MonthCalendar
+                  month={calMonth}
+                  records={history}
+                  schedMap={schedule}
+                  holidays={holidays}
+                  today={localDateISO()}
+                />
+              </div>
+            )}
+            {tab==='sueldo'&&(
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Mes</p>
+                  <input type="month" value={calMonth} onChange={e=>setCalMonth(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-gray-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+                </div>
+                {payroll ? (
+                  <div className="space-y-3">
+                    <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4 text-center">
+                      <p className="text-xs text-sky-500 font-bold uppercase tracking-wide mb-1">Total liquidado</p>
+                      <p className="text-4xl font-black text-sky-700">{new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(payroll.total_net||0)}</p>
+                      <p className="text-xs text-sky-400 mt-1 capitalize">{payroll.status==='approved'?'✓ Aprobado':payroll.status==='paid'?'✓ Pagado':'Borrador'}</p>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2.5 text-sm">
+                      {[
+                        ['Sueldo base',new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(payroll.base_salary||0),'text-gray-700'],
+                        ['Días programados',payroll.days_scheduled,'text-gray-700'],
+                        ['Días trabajados',payroll.days_worked,'text-emerald-600'],
+                        ['Ausencias injust.',payroll.days_absent,'text-red-500'],
+                        ['Descuento faltas',`-${new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(payroll.deduction_amt||0)}`,'text-red-500'],
+                        ['Horas extra',`+${new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(payroll.extra_hours_amt||0)}`,'text-emerald-600'],
+                        ['Bonus',`+${new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(payroll.bonus||0)}`,'text-emerald-600'],
+                      ].map(([l,v,c])=>(
+                        <div key={l} className="flex justify-between">
+                          <span className="text-gray-500 text-xs">{l}</span>
+                          <span className={`font-bold text-xs ${c}`}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {payroll.notes&&<p className="text-xs text-gray-400 italic px-1">Nota: {payroll.notes}</p>}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 space-y-2">
+                    <span className="text-4xl">💰</span>
+                    <p className="text-sm font-bold text-gray-700">Sin liquidación este mes</p>
+                    <p className="text-xs text-gray-400">El admin genera la liquidación a fin de mes</p>
+                  </div>
+                )}
+                {empExtras.length>0&&(
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                    <p className="text-xs font-bold text-emerald-700 mb-2">Horas extra / remoto registradas</p>
+                    <div className="space-y-1.5">
+                      {empExtras.map(h=>(
+                        <div key={h.id} className="flex justify-between text-xs">
+                          <span className="text-gray-600">{h.date} — {h.hours}hs{h.description?` (${h.description})`:''}</span>
+                          <span className="font-bold text-emerald-600">x{h.multiplier}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {tab==='history'&&(

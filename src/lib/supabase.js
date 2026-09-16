@@ -376,6 +376,59 @@ export const adminAddManualRecord = async ({ employeeId, date, status, justifica
 };
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
+// ─── PASSWORD RESET ───────────────────────────────────────────────────────────
+export const sendPasswordReset = async (email) => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/?reset=1',
+  });
+  if (error) throw error;
+};
+
+export const updatePassword = async (newPassword) => {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+};
+
+// Admin reset employee password via RPC
+export const adminResetPassword = async (empId, newPassword) => {
+  const { error } = await supabase.rpc('admin_update_employee_password', {
+    p_user_id: empId,
+    p_new_password: newPassword,
+  });
+  if (error) {
+    // Fallback: update profile with a flag so employee must change on next login
+    await supabase.from('profiles').update({ must_change_password: true }).eq('id', empId);
+    throw new Error('No se pudo cambiar la contraseña automáticamente. El empleado debe usar "Olvidé mi contraseña".');
+  }
+};
+
+// ─── PAYROLL ──────────────────────────────────────────────────────────────────
+export const getEmployeePayroll = async (employeeId, month) => {
+  const { data, error } = await supabase
+    .from('payroll')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .eq('month', month)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+};
+
+export const getEmployeeExtraHours = async (employeeId, month) => {
+  const start = month + '-01';
+  const [y, m] = month.split('-').map(Number);
+  const end = new Date(y, m, 0).toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('extra_hours')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .gte('date', start)
+    .lte('date', end)
+    .order('date');
+  if (error) throw error;
+  return data || [];
+};
+
 export const localDateISO = () => {
   const d = new Date();
   return [

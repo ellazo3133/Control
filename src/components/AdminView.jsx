@@ -5,6 +5,7 @@ import { supabase, getAllProfiles, getHolidays, addHoliday, deleteHoliday, getHQ
 import { getHolidaysForYear } from '../data/holidays';
 import EmployeeProfileModal from './EmployeeProfileModal';
 import ExportButton from './ExportButton';
+import MonthCalendar from './MonthCalendar';
 
 const DAYS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const DAYS_SHORT=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -281,6 +282,7 @@ export default function AdminView({profile,onLogout}){
   const [empSchedMap,setEmpSchedMap]=useState({});
 
   const [filterDate,setFilterDate]=useState(localDateISO());
+  const [analysisEmp,setAnalysisEmp]=useState('all');
   const [filterEmp,setFilterEmp]=useState('all');
   const [analysisMonth,setAnalysisMonth]=useState(new Date().toISOString().slice(0,7));
   const [hqForm,setHqForm]=useState({name:'',lat:'',lng:'',radius_meters:100});
@@ -322,7 +324,12 @@ export default function AdminView({profile,onLogout}){
     setEmpSchedMap(sm);
   },[]);
 
-  useEffect(()=>{loadAll();},[loadAll]);
+  useEffect(()=>{
+    loadAll();
+    // Auto-refresh dashboard every 60s
+    const interval = setInterval(()=>{ loadAll(); }, 60000);
+    return ()=>clearInterval(interval);
+  },[loadAll]);
 
   useEffect(()=>{
     getFilteredRecords({date:filterDate||undefined,employeeId:filterEmp}).then(setFilteredRecs).catch(()=>{});
@@ -784,13 +791,30 @@ export default function AdminView({profile,onLogout}){
           <div className="space-y-5">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <h2 className="text-2xl font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>Análisis</h2>
-              <div className="flex gap-2 items-center">
+              <div className="flex gap-2 items-center flex-wrap">
+                <select value={analysisEmp} onChange={e=>setAnalysisEmp(e.target.value)}
+                  className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none bg-white">
+                  <option value="all">Todos los empleados</option>
+                  {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
                 <input type="month" value={analysisMonth} onChange={e=>setAnalysisMonth(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
                 <ExportButton employees={employees} records={monthRecs} schedMap={empSchedMap} month={analysisMonth} extraHours={extraHoursList} payrolls={payrolls}/>
               </div>
             </div>
+
+            {/* Calendar view for single employee */}
+            {analysisEmp!=='all'&&(
+              <MonthCalendar
+                month={analysisMonth}
+                records={monthRecs.filter(r=>r.employee_id===analysisEmp)}
+                schedMap={empSchedMap[analysisEmp]||{}}
+                holidays={holidays}
+                onDayClick={cell=>{ const rec=monthRecs.find(r=>r.employee_id===analysisEmp&&r.date===cell.date); setEditRec(rec||{date:cell.date,employee_id:analysisEmp,profiles:{name:employees.find(e=>e.id===analysisEmp)?.name,avatar:employees.find(e=>e.id===analysisEmp)?.avatar}}); }}
+              />
+            )}
+
             <div className="grid gap-4 md:grid-cols-2">
-              {employees.map(emp=>{const s=getStats(emp.id);
+              {employees.filter(e=>analysisEmp==='all'||e.id===analysisEmp).map(emp=>{const s=getStats(emp.id);
                 const pC=s.pct>=90?'text-emerald-600':s.pct>=75?'text-amber-600':'text-red-500';
                 const bC=s.pct>=90?'from-emerald-400 to-emerald-500':s.pct>=75?'from-amber-400 to-amber-500':'from-red-400 to-red-500';
                 const th=s.totalWork?`${Math.floor(s.totalWork/60)}h ${s.totalWork%60}m`:'—';

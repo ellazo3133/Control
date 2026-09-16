@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import MonthCalendar from './MonthCalendar';
 
 const DAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 const TOLERANCE = 15;
@@ -115,7 +116,8 @@ function DayEditModal({day, rec, sched, empId, onSave, onClose}) {
 
 // ─── MAIN EMPLOYEE PROFILE MODAL ─────────────────────────────────────────────
 export default function EmployeeProfileModal({emp, month, onMonthChange, records, extraHours, schedMap, holidays, adminId, onEditRecord, onAddRecord, onClose}) {
-  const [editDay, setEditDay] = useState(null); // {date, rec, sched}
+  const [editDay, setEditDay] = useState(null);
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar' // {date, rec, sched}
 
   if (!emp) return null;
 
@@ -257,8 +259,30 @@ export default function EmployeeProfileModal({emp, month, onMonthChange, records
           )}
         </div>
 
+        {/* View toggle */}
+        <div className="px-4 py-2 border-b border-gray-50 flex gap-2 flex-shrink-0">
+          <button onClick={()=>setViewMode('list')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${viewMode==='list'?'bg-sky-100 text-sky-700':'text-gray-400 hover:bg-gray-100'}`}>
+            ≡ Lista
+          </button>
+          <button onClick={()=>setViewMode('calendar')} className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${viewMode==='calendar'?'bg-sky-100 text-sky-700':'text-gray-400 hover:bg-gray-100'}`}>
+            📅 Calendario
+          </button>
+        </div>
+
+        {viewMode==='calendar'&&(
+          <div className="overflow-y-auto flex-1 px-4 py-3">
+            <MonthCalendar
+              month={month}
+              records={records}
+              schedMap={schedMap}
+              holidays={holidays}
+              onDayClick={cell=>{ const rec=records.find(r=>r.date===cell.date); setEditDay({...cell,rec}); }}
+            />
+          </div>
+        )}
+
         {/* Day list */}
-        <div className="overflow-y-auto flex-1 px-4 py-3 space-y-1.5">
+        <div className={`overflow-y-auto flex-1 px-4 py-3 space-y-1.5 ${viewMode==='calendar'?'hidden':''}`}>
           {days.map(day => (
             <div key={day.date}
               className={`flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all ${estadoColor(day.estado)} ${day.hasShift&&!day.isFuture?'cursor-pointer hover:shadow-sm active:scale-[0.99]':''}`}
