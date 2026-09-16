@@ -196,18 +196,21 @@ export default function AdminView({ profile, onLogout }) {
   const showToast=(msg,type='success')=>{ setToast({msg,type}); setTimeout(()=>setToast(null),3500); };
 
   const loadAll = useCallback(async () => {
-    try {
-      const [emps, scheds, today, hqData, hols] = await Promise.all([
-        getAllProfiles(), getAllSchedules(), getFilteredRecords({date:localDateISO()}),
-        getHQ(), getHolidays()
-      ]);
-      setEmployees(emps||[]); setTodayRecs(today||[]); setHolidays(hols||[]);
-      if(hqData){ setHq(hqData); setHqForm({name:hqData.name,lat:hqData.lat,lng:hqData.lng,radius_meters:hqData.radius_meters}); }
-      // Build schedule map per employee
-      const sm={};
-      (scheds||[]).forEach(s=>{ if(!sm[s.employee_id])sm[s.employee_id]={}; sm[s.employee_id][s.day_of_week]=s; });
-      setEmpSchedMap(sm); setAllSchedules(scheds||[]);
-    } catch(e){ showToast('Error cargando datos','error'); }
+    const [empsRes, schedsRes, todayRes, hqRes, holsRes] = await Promise.allSettled([
+      getAllProfiles(), getAllSchedules(), getFilteredRecords({date:localDateISO()}),
+      getHQ(), getHolidays()
+    ]);
+    const emps   = empsRes.status==='fulfilled'   ? empsRes.value   : [];
+    const scheds = schedsRes.status==='fulfilled' ? schedsRes.value : [];
+    const today  = todayRes.status==='fulfilled'  ? todayRes.value  : [];
+    const hols   = holsRes.status==='fulfilled'   ? holsRes.value   : [];
+    const hqData = hqRes.status==='fulfilled'     ? hqRes.value     : null;
+    [empsRes,schedsRes,todayRes,hqRes,holsRes].forEach((r,i)=>{ if(r.status==='rejected') console.error('loadAll['+i+']:',r.reason?.message||r.reason); });
+    setEmployees(emps||[]); setTodayRecs(today||[]); setHolidays(hols||[]);
+    if(hqData){ setHq(hqData); setHqForm({name:hqData.name,lat:hqData.lat,lng:hqData.lng,radius_meters:hqData.radius_meters}); }
+    const sm={};
+    (scheds||[]).forEach(s=>{ if(!sm[s.employee_id])sm[s.employee_id]={}; sm[s.employee_id][s.day_of_week]=s; });
+    setEmpSchedMap(sm); setAllSchedules(scheds||[]);
   }, []);
 
   useEffect(()=>{ loadAll(); },[loadAll]);
@@ -227,19 +230,35 @@ export default function AdminView({ profile, onLogout }) {
 
   // Add employee
   const handleAddEmployee = async (name, email, pw, sched) => {
-    // Crear via Supabase Auth signup (el admin no puede hacer signUp por otro,
-    // así que usamos la función RPC que creamos)
-    const { data, error } = await supabase.rpc('admin_create_employee', {
+    // Intentar via RPC primero, si falla usar signup directo
+    let empId = null;
+    const { data: rpcData, error: rpcError } = await supabase.rpc('admin_create_employee', {
       p_name: name, p_email: email, p_password: pw
     });
-    if (error) throw error;
-    const empId = data;
-    // Guardar horarios
+    if (rpcError) {
+      // Fallback: crear via signUp normal (el usuario queda sin confirmar hasta que el admin lo confirme)
+      const { data: signUpData, error: signUpError } = await supabase.auth.admin?.createUser
+        ? await supabase.auth.admin.createUser({ email, password: pw, email_confirm: true, user_metadata: { name } })
+        : { data: null, error: new Error('Sin permisos admin') };
+      if (signUpError || !signUpData?.user) {
+        // Último fallback: insertar directamente en profiles (el empleado se registra solo con ese email)
+        const avatar = name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+        const { data: p, error: pe } = await supabase.from('profiles').insert({ name, email, role:'employee', avatar, bio_registered:false, active:true }).select().single();
+        if (pe) throw new Error('Error creando empleado: ' + pe.message);
+        empId = p.id;
+      } else {
+        empId = signUpData.user.id;
+      }
+    } else {
+      empId = rpcData;
+    }
+    if (!empId) throw new Error('No se pudo obtener ID del empleado');
     const schedRows = Object.entries(sched)
       .filter(([,s])=>s.active)
       .map(([dow,s])=>({ employee_id:empId, day_of_week:parseInt(dow), start_time:s.start_time||'09:00', end_time:s.end_time||'17:00', tolerance_minutes:0, active:true }));
     if(schedRows.length>0){
-      await supabase.from('schedules').insert(schedRows);
+      const { error: se } = await supabase.from('schedules').insert(schedRows);
+      if (se) console.error('Error guardando horarios:', se.message);
     }
     await loadAll();
     showToast('Empleado creado');

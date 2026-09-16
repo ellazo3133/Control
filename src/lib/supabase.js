@@ -162,9 +162,9 @@ export const getHQ = async () => {
     .select('*')
     .order('updated_at', { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
   if (error) throw error;
-  return data;
+  return data || { name: 'Sede principal', lat: -34.6037, lng: -58.3816, radius_meters: 100 };
 };
 
 export const updateHQ = async (name, lat, lng, radius, updatedBy) => {
