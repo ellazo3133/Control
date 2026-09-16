@@ -3,6 +3,7 @@ import { supabase, getAllProfiles, getHolidays, addHoliday, deleteHoliday, getHQ
   upsertSchedules, getAllSchedules, getFilteredRecords, getRecordsByMonth,
   adminEditRecord, adminAddManualRecord, localDateISO, getGeoPos } from '../lib/supabase';
 import { getHolidaysForYear } from '../data/holidays';
+import EmployeeProfileModal from './EmployeeProfileModal';
 
 const DAYS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const DAYS_SHORT=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
@@ -292,6 +293,10 @@ export default function AdminView({profile,onLogout}){
   const [editEmpSched,setEditEmpSched]=useState({});
   const [editSalaryEmp,setEditSalaryEmp]=useState(null);
   const [editSalaryVal,setEditSalaryVal]=useState('');
+  const [viewEmpId,setViewEmpId]=useState(null);
+  const [viewEmpMonth,setViewEmpMonth]=useState(new Date().toISOString().slice(0,7));
+  const [viewEmpRecs,setViewEmpRecs]=useState([]);
+  const [viewEmpExtra,setViewEmpExtra]=useState([]);
   const [payrollEmp,setPayrollEmp]=useState(null);
   const [extraHoursList,setExtraHoursList]=useState([]);
   const [payrolls,setPayrolls]=useState([]);
@@ -363,6 +368,31 @@ export default function AdminView({profile,onLogout}){
   const saveSalary=async()=>{
     await supabase.from('profiles').update({salary:parseFloat(editSalaryVal)||0}).eq('id',editSalaryEmp.id);
     await loadAll();setEditSalaryEmp(null);showToast('Sueldo actualizado');
+  };
+
+  // View employee profile
+  const openViewEmp = async (emp) => {
+    setViewEmpId(emp.id);
+    const [y,m] = viewEmpMonth.split('-').map(Number);
+    const start = viewEmpMonth + '-01';
+    const end = new Date(y,m,0).toISOString().split('T')[0];
+    const [{data:recs},{data:extras}] = await Promise.all([
+      supabase.from('attendance_records').select('*').eq('employee_id',emp.id).gte('date',start).lte('date',end).order('date'),
+      supabase.from('extra_hours').select('*').eq('employee_id',emp.id).gte('date',start).lte('date',end)
+    ]);
+    setViewEmpRecs(recs||[]);
+    setViewEmpExtra(extras||[]);
+  };
+  const reloadViewEmp = async (empId, month) => {
+    const [y,m] = month.split('-').map(Number);
+    const start = month + '-01';
+    const end = new Date(y,m,0).toISOString().split('T')[0];
+    const [{data:recs},{data:extras}] = await Promise.all([
+      supabase.from('attendance_records').select('*').eq('employee_id',empId).gte('date',start).lte('date',end).order('date'),
+      supabase.from('extra_hours').select('*').eq('employee_id',empId).gte('date',start).lte('date',end)
+    ]);
+    setViewEmpRecs(recs||[]);
+    setViewEmpExtra(extras||[]);
   };
 
   // Records
@@ -546,6 +576,9 @@ export default function AdminView({profile,onLogout}){
                       </div>
                     </div>
                     <div className="flex gap-1.5 flex-shrink-0 flex-col">
+                      <button onClick={()=>openViewEmp(emp)} className="p-2 text-gray-300 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-colors" title="Ver perfil">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                      </button>
                       <button onClick={()=>openEditSched(emp)} className="p-2 text-gray-300 hover:text-sky-600 hover:bg-sky-50 rounded-xl transition-colors" title="Editar horario">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                       </button>
@@ -780,6 +813,27 @@ export default function AdminView({profile,onLogout}){
       </div>
 
       {/* MODALS */}
+      {viewEmpId&&<EmployeeProfileModal
+        emp={employees.find(e=>e.id===viewEmpId)}
+        month={viewEmpMonth}
+        onMonthChange={async(m)=>{setViewEmpMonth(m);await reloadViewEmp(viewEmpId,m);}}
+        records={viewEmpRecs}
+        extraHours={viewEmpExtra}
+        schedMap={empSchedMap[viewEmpId]||{}}
+        holidays={holidays}
+        adminId={profile.id}
+        onEditRecord={async(recId,patch,reason)=>{
+          await adminEditRecord(recId,patch,profile.id,reason||'Edición admin');
+          await reloadViewEmp(viewEmpId,viewEmpMonth);
+          showToast('Registro actualizado');
+        }}
+        onAddRecord={async(empId,date,status,just)=>{
+          await adminAddManualRecord({employeeId:empId,date,status,justification:just,adminId:profile.id});
+          await reloadViewEmp(viewEmpId,viewEmpMonth);
+          showToast('Registro agregado');
+        }}
+        onClose={()=>setViewEmpId(null)}
+      />}
       {showAddEmp&&<AddEmployeeModal onClose={()=>setShowAddEmp(false)} onSave={handleAddEmployee}/>}
       {editEmpId&&(
         <Modal open={true} onClose={()=>setEditEmpId(null)} title="Editar horario">
