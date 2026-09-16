@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePWA } from '../hooks/usePWA';
 import MonthCalendar from './MonthCalendar';
+import VacacionesView from './VacacionesView';
 import { getEmployeePayroll, getEmployeeExtraHours, notifyAdminLate, notifyAdminAbsent, getWeekRecords } from '../lib/supabase';
 import {
   getHQ, getSchedules, getTodayRecord, getRecordsByEmployee,
@@ -596,7 +597,8 @@ export default function EmployeeView({profile,onLogout}) {
         {/* Tabs */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="flex border-b border-gray-100 overflow-x-auto">
-            {[['schedule','Horario'],['calendar','Calendario'],['history','Historial'],['sueldo','Mi sueldo']].map(([t,l])=>(
+            {[['schedule','Horario'],['calendar','Calendario'],['history','Historial'],['sueldo','Sueldo'],['vacaciones','Vacaciones']].map(([t,l])=>(
+
               <button key={t} onClick={()=>setTab(t)} className={`flex-shrink-0 flex-1 py-3.5 text-xs font-bold uppercase tracking-wide ${tab===t?'text-sky-600 border-b-2 border-sky-500':'text-gray-400'}`}>{l}</button>
             ))}
           </div>
@@ -695,6 +697,12 @@ export default function EmployeeView({profile,onLogout}) {
                   </div>
                 )}
               </div>
+            )}
+            {tab==='vacaciones'&&(
+              <VacacionesView
+                profile={currentProfile}
+                hireDate={currentProfile.hire_date}
+              />
             )}
             {tab==='history'&&(
               <div>

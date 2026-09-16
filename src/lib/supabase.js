@@ -317,6 +317,99 @@ export const checkOut = async ({ employeeId, lat, lng, accuracy, distanceFromHQ,
   return data;
 };
 
+// ─── VACACIONES ──────────────────────────────────────────────────────────────
+
+// Calcula días de vacaciones según LCT (días corridos)
+export const calcVacationDays = (hireDate, referenceDate = new Date()) => {
+  if (!hireDate) return 0;
+  const hire = new Date(hireDate);
+  const ref  = new Date(referenceDate);
+  const totalDays = Math.floor((ref - hire) / (1000*60*60*24));
+  const totalMonths = (ref.getFullYear() - hire.getFullYear())*12 + (ref.getMonth() - hire.getMonth());
+  const years = Math.floor(totalMonths / 12);
+
+  if (totalMonths < 6) return Math.min(Math.floor(totalDays / 20), 14);
+  if (years < 5)  return 14;
+  if (years < 10) return 21;
+  if (years < 20) return 28;
+  return 35;
+};
+
+export const calcSeniority = (hireDate) => {
+  if (!hireDate) return { years:0, months:0, label:'Sin fecha de alta' };
+  const hire = new Date(hireDate);
+  const now  = new Date();
+  const months = (now.getFullYear()-hire.getFullYear())*12+(now.getMonth()-hire.getMonth());
+  const years  = Math.floor(months/12);
+  const rem    = months%12;
+  if (months < 6) return { years:0, months, label:`${months} meses` };
+  if (years === 0) return { years:0, months, label:`${months} meses` };
+  return { years, months:rem, label:`${years} año${years!==1?'s':''} ${rem>0?`y ${rem} mes${rem!==1?'es':''}`:''}` };
+};
+
+export const getVacationBalance = async (employeeId, year) => {
+  const y = year || new Date().getFullYear();
+  const { data } = await supabase.from('vacation_balance')
+    .select('*').eq('employee_id', employeeId).eq('year', y).maybeSingle();
+  return data;
+};
+
+export const upsertVacationBalance = async (employeeId, year, updates) => {
+  const { data, error } = await supabase.from('vacation_balance')
+    .upsert({ employee_id:employeeId, year, ...updates }, { onConflict:'employee_id,year' })
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const getVacationRequests = async (employeeId) => {
+  let q = supabase.from('vacation_requests')
+    .select('*, profiles!vacation_requests_employee_id_fkey(name,avatar)')
+    .order('created_at', { ascending:false });
+  if (employeeId) q = q.eq('employee_id', employeeId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+};
+
+export const getAllVacationRequests = async () => {
+  const { data, error } = await supabase.from('vacation_requests')
+    .select('*, profiles!vacation_requests_employee_id_fkey(name,avatar,hire_date)')
+    .order('created_at', { ascending:false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createVacationRequest = async ({ employeeId, startDate, endDate, reason }) => {
+  const days = Math.round((new Date(endDate) - new Date(startDate)) / (1000*60*60*24)) + 1;
+  const { data, error } = await supabase.from('vacation_requests')
+    .insert({ employee_id:employeeId, start_date:startDate, end_date:endDate, days, reason, status:'pending' })
+    .select().single();
+  if (error) throw error;
+  // Add admin notification
+  await supabase.from('admin_notifications').insert({
+    type:'vacation_request',
+    title:`🏖️ Solicitud de vacaciones`,
+    body:`${days} días corridos del ${new Date(startDate+'T12:00:00').toLocaleDateString('es-AR')} al ${new Date(endDate+'T12:00:00').toLocaleDateString('es-AR')}`,
+    data:{ employeeId, startDate, endDate, days },
+  }).catch(()=>{});
+  return data;
+};
+
+export const reviewVacationRequest = async (requestId, status, adminNote, adminId) => {
+  const { data, error } = await supabase.from('vacation_requests')
+    .update({ status, admin_note:adminNote||null, reviewed_by:adminId, reviewed_at:new Date().toISOString() })
+    .eq('id', requestId).select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const cancelVacationRequest = async (requestId) => {
+  const { error } = await supabase.from('vacation_requests')
+    .update({ status:'cancelled' }).eq('id', requestId);
+  if (error) throw error;
+};
+
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 // Send email notification via Supabase (uses Edge Function or direct email)
 // We use a simple approach: insert into a notifications table that triggers an email
