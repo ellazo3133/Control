@@ -490,6 +490,16 @@ export default function AdminView({profile,onLogout}){
     const hols=await getHolidays();setHolidays(hols);
     showToast(`Importados ${count} feriados de ${year}`);
   };
+  const handleEditHol=async()=>{
+    if(!editHol?.name||!editHol?.date) return;
+    try{
+      const{error}=await supabase.from('holidays').update({name:editHol.name,date:editHol.date}).eq('id',editHol.id);
+      if(error)throw error;
+      setHolidays(p=>p.map(h=>h.id===editHol.id?{...h,name:editHol.name,date:editHol.date}:h));
+      setEditHol(null);
+      showToast('Feriado actualizado');
+    }catch(e){showToast(e.message,'error');}
+  };
   const handleDelHol=async(id)=>{try{await deleteHoliday(id);setHolidays(p=>p.filter(h=>h.id!==id));}catch(e){showToast(e.message,'error');}};
 
   // HQ
@@ -803,9 +813,14 @@ export default function AdminView({profile,onLogout}){
                     <p className="font-bold text-gray-900 text-sm">{h.name}</p>
                     <p className="text-xs text-gray-400">{fmtDate(h.date)} — {DAYS[new Date(h.date+'T12:00:00').getDay()]}</p>
                   </div>
-                  <button onClick={()=>handleDelHol(h.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                  </button>
+                  <div className="flex gap-1">
+                    <button onClick={()=>setEditHol({...h})} className="p-2 text-gray-300 hover:text-sky-500 hover:bg-sky-50 rounded-xl">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                    </button>
+                    <button onClick={()=>handleDelHol(h.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -957,12 +972,20 @@ export default function AdminView({profile,onLogout}){
                 placeholder="Dejá vacío para no cambiar"
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50"/>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Fecha de alta</label>
+            <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4">
+              <label className="block text-xs font-bold text-sky-700 mb-1.5 uppercase tracking-wide">📅 Fecha de alta / ingreso</label>
               <input type="date" value={editEmpData.form.hire_date||''}
                 onChange={e=>setEditEmpData(p=>({...p,form:{...p.form,hire_date:e.target.value}}))}
-                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50"/>
-              <p className="text-xs text-gray-400 mt-1">Se usa para calcular días de vacaciones según LCT</p>
+                className="w-full px-4 py-2.5 rounded-2xl border border-sky-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"/>
+              <p className="text-xs text-sky-600 mt-1.5">Usada para calcular vacaciones y antigüedad según LCT</p>
+              {editEmpData.form.hire_date&&(()=>{
+                const hire=new Date(editEmpData.form.hire_date),now=new Date();
+                const months=(now.getFullYear()-hire.getFullYear())*12+(now.getMonth()-hire.getMonth());
+                const years=Math.floor(months/12);
+                const days=months<6?Math.min(Math.floor((now-hire)/(1000*60*60*24*20)),14):years<5?14:years<10?21:years<20?28:35;
+                const label=months<6?`${months} meses`:years===0?`${months} meses`:`${years} año${years!==1?'s':''}`;
+                return <p className="text-xs font-bold text-sky-700 mt-1">→ {label} · {days} días de vacaciones</p>;
+              })()}
             </div>
             <div className="flex gap-3 pt-2">
               <button onClick={()=>setEditEmpData(null)}
@@ -1002,6 +1025,26 @@ export default function AdminView({profile,onLogout}){
         <PayrollModal emp={payrollEmp} month={analysisMonth} stats={getStats(payrollEmp.id)}
           extraHours={extraHoursList.filter(h=>h.employee_id===payrollEmp.id)}
           onClose={()=>setPayrollEmp(null)} onSave={handleSavePayroll}/>
+      )}
+      {editHol&&(
+        <Modal open={true} onClose={()=>setEditHol(null)} title="Editar feriado">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Nombre del feriado</label>
+              <input value={editHol.name} onChange={e=>setEditHol(p=>({...p,name:e.target.value}))}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Fecha</label>
+              <input type="date" value={editHol.date} onChange={e=>setEditHol(p=>({...p,date:e.target.value}))}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={()=>setEditHol(null)} className="flex-1 py-3 rounded-2xl text-sm font-bold border-2 border-gray-200 text-gray-500">Cancelar</button>
+              <button onClick={handleEditHol} className="flex-1 py-3 rounded-2xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>Guardar</button>
+            </div>
+          </div>
+        </Modal>
       )}
       <Modal open={showAddHol} onClose={()=>setShowAddHol(false)} title="Agregar feriado manual">
         <div className="space-y-4">
