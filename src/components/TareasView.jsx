@@ -136,7 +136,7 @@ export default function TareasView({ profile }) {
                   <p className="text-sm font-bold text-gray-900 mb-1">{t.title}</p>
                   {t.description&&<p className="text-xs text-gray-500 mb-2">{t.description}</p>}
                   <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
-                    {t.due_date&&<span className={t.due_date<today?'text-red-500 font-bold':''}}>📅 {fmtDate(t.due_date)}</span>}
+                    {t.due_date&&<span className={t.due_date<today?'text-red-500 font-bold':'text-gray-400'}>📅 {fmtDate(t.due_date)}</span>}
                     <span>{TASK_PRIORITIES[t.priority]?.icon} {TASK_PRIORITIES[t.priority]?.label}</span>
                     {t.profiles&&<span>De: {t.profiles.name}</span>}
                   </div>
