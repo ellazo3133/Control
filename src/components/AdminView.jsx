@@ -539,14 +539,18 @@ export default function AdminView({profile,onLogout}){
       const rec=monthRecs.find(r=>r.employee_id===empId&&r.date===date);
       if(rec?.check_in){
         present++;
-        const late=rec.minutes_late||0;
+        const late=rec.minutes_late||0; // ya tiene la tolerancia descontada (solo cuenta si >15min)
         if(late>0){lateMins+=late;lateCount++;}
         if(rec.minutes_worked){
           totalWorked+=rec.minutes_worked;
           totalExpected+=expectedMinutes;
+          // diff = tiempo real trabajado vs jornada esperada
+          // Si llegó 5min tarde (dentro de tolerancia) y salió 5min tarde → diff ≈ 0 → correcto
+          // Si llegó 20min tarde (tardanza real 5min) y salió a la hora → diff = -5min
+          // Si salió 30min tarde → diff = +30min de extra
           const diff=rec.minutes_worked-expectedMinutes;
-          if(diff>0) totalExtraMins+=diff;
-          else if(diff<0) totalMissingMins+=Math.abs(diff);
+          if(diff>5) totalExtraMins+=diff;       // margen 5min para evitar ruido GPS
+          else if(diff<-5) totalMissingMins+=Math.abs(diff);
         }
       } else if(rec?.status==='justified'){
         justified++;

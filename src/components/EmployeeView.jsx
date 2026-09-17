@@ -24,31 +24,51 @@ const timeToMins = t => { if(!t)return 0; const [h,m]=(t.slice(0,5)||'00:00').sp
 const minsToTime = m => { const h=Math.floor(Math.abs(m)/60); const mm=Math.abs(m)%60; return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`; };
 
 // Calcula métricas de la jornada
+// IMPORTANTE: Los timestamps de Supabase son UTC con 'Z'. 
+// getHours/getMinutes en JS usa la zona horaria LOCAL del dispositivo → correcto para Argentina.
 const calcJornada = (record, sched) => {
   if (!sched?.active || !record?.check_in) return null;
-  const expectedStart = timeToMins(sched.start_time);
-  const expectedEnd   = timeToMins(sched.end_time);
-  const expectedHours = expectedEnd - expectedStart; // minutos esperados
 
+  const expectedStart = timeToMins(sched.start_time); // ej: 9*60 = 540
+  const expectedEnd   = timeToMins(sched.end_time);   // ej: 17*60 = 1020
+  const expectedHours = expectedEnd - expectedStart;   // minutos de jornada: 480
+
+  // Parsear check_in local (getHours usa TZ del dispositivo = ARG correctamente)
   const checkInDate = new Date(record.check_in);
   const actualStart = checkInDate.getHours()*60 + checkInDate.getMinutes();
-  const lateMinutes = Math.max(0, actualStart - expectedStart - TOLERANCE_MINUTES);
-  const isLate = lateMinutes > 0;
 
-  // Hora que debe salir para compensar la tardanza
-  const mustLeaveAt = expectedEnd + (isLate ? lateMinutes : 0);
+  // Sanity check: si actualStart es absurdo (ej > 1440 o < 0) hay un bug de timezone
+  if (actualStart < 0 || actualStart > 1440) return null;
+
+  // Tolerancia: solo descuenta tardanza si superó 15 min
+  // Entró 9:10 con turno 9:00 → rawLate=10, lateMinutes=max(0,10-15)=0 ✓
+  // Entró 9:20 con turno 9:00 → rawLate=20, lateMinutes=max(0,20-15)=5 ✓
+  const rawLate     = Math.max(0, actualStart - expectedStart);
+  const lateMinutes = Math.max(0, rawLate - TOLERANCE_MINUTES);
+  const isLate      = lateMinutes > 0;
+
+  // Hora de salida esperada: NO cambia por tardanza dentro de tolerancia
+  // Solo si superó la tolerancia, debe compensar los minutos extra
+  const mustLeaveAt = expectedEnd + lateMinutes; // si isLate=false, lateMinutes=0 → sale a la hora normal
 
   let horasExtra = 0, horasFaltantes = 0, workedMinutes = 0;
   if (record.check_out) {
     const checkOutDate = new Date(record.check_out);
-    const actualEnd = checkOutDate.getHours()*60 + checkOutDate.getMinutes();
+    const actualEnd    = checkOutDate.getHours()*60 + checkOutDate.getMinutes();
     workedMinutes = actualEnd - actualStart;
+
+    // Comparar contra jornada esperada REAL (expectedHours, no ajustada por tardanza)
+    // Si llegó 5 min tarde y salió 5 min tarde → workedMinutes = 480 = expectedHours → 0 extras/faltantes
     const diff = workedMinutes - expectedHours;
-    if (diff > 0) horasExtra = diff;
-    else if (diff < 0) horasFaltantes = Math.abs(diff);
+    if (diff >  5) horasExtra    = diff;   // margen 5 min para evitar ruido
+    else if (diff < -5) horasFaltantes = Math.abs(diff);
   }
 
-  return { expectedStart, expectedEnd, expectedHours, actualStart, lateMinutes, isLate, mustLeaveAt, horasExtra, horasFaltantes, workedMinutes };
+  return {
+    expectedStart, expectedEnd, expectedHours,
+    actualStart, rawLate, lateMinutes, isLate,
+    mustLeaveAt, horasExtra, horasFaltantes, workedMinutes
+  };
 };
 
 // Frases de bienvenida (en hora)
