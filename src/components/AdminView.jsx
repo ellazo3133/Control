@@ -566,6 +566,7 @@ export default function AdminView({profile,onLogout}){
       totalWorked,totalExpected,
       totalExtraMins,totalMissingMins,
       pct:scheduled>0?Math.round(present/scheduled*100):0,
+      lateHM: lateMins>0?`${Math.floor(lateMins/60)}h ${lateMins%60}m`:'0',
     };
   };
 

@@ -33,28 +33,35 @@ const calcJornada = (record, sched) => {
   const expectedEnd   = timeToMins(sched.end_time);   // ej: 17*60 = 1020
   const expectedHours = expectedEnd - expectedStart;   // minutos de jornada: 480
 
-  // Parsear check_in local (getHours usa TZ del dispositivo = ARG correctamente)
-  const checkInDate = new Date(record.check_in);
-  const actualStart = checkInDate.getHours()*60 + checkInDate.getMinutes();
+  // Forzar zona horaria Argentina (UTC-3) para evitar errores de TZ en otros dispositivos
+  const toARG = iso => {
+    const d = new Date(iso);
+    // Argentina es UTC-3 (sin cambio de horario)
+    const argOffset = -3 * 60; // minutos
+    const utcMins = d.getUTCHours()*60 + d.getUTCMinutes();
+    return ((utcMins + argOffset) + 1440) % 1440; // wrap a 0-1439
+  };
+  const actualStart = toARG(record.check_in);
 
   // Sanity check: si actualStart es absurdo (ej > 1440 o < 0) hay un bug de timezone
   if (actualStart < 0 || actualStart > 1440) return null;
 
-  // Tolerancia: solo descuenta tardanza si superó 15 min
-  // Entró 9:10 con turno 9:00 → rawLate=10, lateMinutes=max(0,10-15)=0 ✓
-  // Entró 9:20 con turno 9:00 → rawLate=20, lateMinutes=max(0,20-15)=5 ✓
+  // Tolerancia: los primeros 15 min son gracia, pero si llegó 20 min tarde
+  // la tardanza COMPLETA son 20 minutos (no 20-15=5). La tolerancia solo decide
+  // si hay tardanza o no, no reduce los minutos a recuperar.
+  // Entró 9:10 con turno 9:00 → rawLate=10 ≤15 → NO hay tardanza, sale a las 17:00 ✓
+  // Entró 9:20 con turno 9:00 → rawLate=20 > 15 → tardanza=20min, sale a las 17:20 ✓
+  // Entró 9:16 con turno 9:00 → rawLate=16 > 15 → tardanza=16min, sale a las 17:16 ✓
   const rawLate     = Math.max(0, actualStart - expectedStart);
-  const lateMinutes = Math.max(0, rawLate - TOLERANCE_MINUTES);
-  const isLate      = lateMinutes > 0;
+  const isLate      = rawLate > TOLERANCE_MINUTES;
+  const lateMinutes = isLate ? rawLate : 0; // si llegó tarde, recupera TODO lo tarde (no resta tolerancia)
 
-  // Hora de salida esperada: NO cambia por tardanza dentro de tolerancia
-  // Solo si superó la tolerancia, debe compensar los minutos extra
-  const mustLeaveAt = expectedEnd + lateMinutes; // si isLate=false, lateMinutes=0 → sale a la hora normal
+  // Sale a la hora normal + los minutos que llegó tarde (si superó tolerancia)
+  const mustLeaveAt = expectedEnd + lateMinutes;
 
   let horasExtra = 0, horasFaltantes = 0, workedMinutes = 0;
   if (record.check_out) {
-    const checkOutDate = new Date(record.check_out);
-    const actualEnd    = checkOutDate.getHours()*60 + checkOutDate.getMinutes();
+    const actualEnd = toARG(record.check_out);
     workedMinutes = actualEnd - actualStart;
 
     // Comparar contra jornada esperada REAL (expectedHours, no ajustada por tardanza)
@@ -164,7 +171,7 @@ function CelebrationModal({open,onClose,tipo,jornada,sched}) {
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5">
             <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide mb-1">Para compensar, tenés que quedarte hasta</p>
             <p className="text-4xl font-black text-amber-700">{debeSalirA}</p>
-            <p className="text-xs text-amber-500 mt-1">({jornada?.lateMinutes} min tarde → salís {jornada?.lateMinutes} min más)</p>
+            <p className="text-xs text-amber-500 mt-1">(llegaste {minsToTime(jornada?.lateMinutes||0)} tarde → salís {minsToTime(jornada?.lateMinutes||0)} más)</p>
           </div>
           <button onClick={onClose} className="w-full py-3 rounded-2xl text-sm font-bold text-white bg-amber-600 hover:bg-amber-700">¡Entendido, voy con todo!</button>
         </div>
@@ -326,7 +333,7 @@ function JornadaStatus({jornada,sched,todayRec}) {
   if(!todayRec?.check_out){
     // Todavía en turno
     if(jornada.isLate){
-      items.push({icon:'⏰',label:'Llegaste tarde',value:`+${jornada.lateMinutes}min`,color:'text-amber-600',bg:'bg-amber-50 border-amber-100'});
+      items.push({icon:'⏰',label:'Llegaste tarde',value:`+${minsToTime(jornada.lateMinutes)} (${jornada.rawLate}min)`,color:'text-amber-600',bg:'bg-amber-50 border-amber-100'});
       items.push({icon:'🏁',label:'Salí a las',value:minsToTime(jornada.mustLeaveAt),color:'text-amber-700',bg:'bg-amber-50 border-amber-100'});
     } else {
       items.push({icon:'✅',label:'Entrada a tiempo',value:`Salí a las ${minsToTime(jornada.expectedEnd)}`,color:'text-emerald-600',bg:'bg-emerald-50 border-emerald-100'});
@@ -341,7 +348,7 @@ function JornadaStatus({jornada,sched,todayRec}) {
       items.push({icon:'✅',label:'Jornada completa',value:`${minsToTime(jornada.workedMinutes)} trabajados`,color:'text-emerald-600',bg:'bg-emerald-50 border-emerald-100'});
     }
     if(jornada.isLate){
-      items.push({icon:'⏰',label:'Llegada tarde',value:`+${jornada.lateMinutes}min`,color:'text-amber-600',bg:'bg-amber-50 border-amber-100'});
+      items.push({icon:'⏰',label:'Llegada tarde',value:`+${minsToTime(jornada.lateMinutes)} (${jornada.rawLate}min)`,color:'text-amber-600',bg:'bg-amber-50 border-amber-100'});
     }
   }
 
@@ -845,7 +852,7 @@ export default function EmployeeView({profile,onLogout}) {
                           <div className="flex items-center gap-3 text-xs text-gray-500">
                             <span>↓ <span className="font-mono font-bold text-gray-700">{fmtTime(r.check_in)}</span>
                               <span className="text-gray-400"> (esp: {rSched?.start_time?.slice(0,5)||'—'})</span>
-                              {(r.minutes_late||0)>0&&<span className="text-amber-500 ml-1">+{r.minutes_late}min tarde</span>}
+                              {(r.minutes_late||0)>0&&<span className="text-amber-500 ml-1">+{minsToTime(r.minutes_late)} tarde</span>}
                             </span>
                             {r.check_out&&(
                               <span>↑ <span className="font-mono font-bold text-gray-700">{fmtTime(r.check_out)}</span>
