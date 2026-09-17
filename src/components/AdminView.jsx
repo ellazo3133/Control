@@ -213,7 +213,8 @@ function ExtraHoursModal({employees,onClose,onSave}){
   );
 }
 
-// ─── PAYROLL MODAL ────────────────────────────────────────────────────────────
+// ─── PAYROLL MODAL ────────────────────────────────────────────────────────────// ─── EXTRA HOURS MODAL ────────────────────────────────────────────────────────
+
 function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
   const baseSalary=emp.salary||0;
   const deductPct=stats.scheduled>0?Math.round((stats.absent/stats.scheduled)*100):0;
@@ -515,17 +516,53 @@ export default function AdminView({profile,onLogout}){
   const getStats=empId=>{
     const sched=empSchedMap[empId]||{};
     const [y,m]=analysisMonth.split('-').map(Number);const days=new Date(y,m,0).getDate();
-    let scheduled=0,present=0,absent=0,justified=0,lateMins=0,lateCount=0,totalWork=0;
+    const today=new Date().toISOString().split('T')[0];
+    let scheduled=0,present=0,absent=0,justified=0;
+    let lateMins=0,lateCount=0;       // tardanzas
+    let totalWorked=0;                 // minutos reales trabajados (check_out - check_in)
+    let totalExpected=0;               // minutos esperados en días presentes
+    let totalMissingMins=0;            // minutos faltantes acumulados (llegó tarde + salió antes)
+    let totalExtraMins=0;              // minutos extra (salió tarde)
+
     for(let d=1;d<=days;d++){
       const date=`${analysisMonth}-${String(d).padStart(2,'0')}`;
       const dow=new Date(date+'T12:00:00').getDay();
-      if(!sched[dow]?.active)continue;scheduled++;
+      const daySched=sched[dow];
+      if(!daySched?.active)continue;
+      scheduled++;
+      const expectedMinutes=(()=>{
+        const [sh,sm]=(daySched.start_time||'09:00').split(':').map(Number);
+        const [eh,em]=(daySched.end_time||'17:00').split(':').map(Number);
+        return (eh*60+em)-(sh*60+sm);
+      })();
+
       const rec=monthRecs.find(r=>r.employee_id===empId&&r.date===date);
-      if(rec?.check_in){present++;if((rec.minutes_late||0)>0){lateMins+=rec.minutes_late;lateCount++;}if(rec.minutes_worked)totalWork+=rec.minutes_worked;}
-      else if(rec?.status==='justified')justified++;
-      else if(new Date(date)<=new Date())absent++;
+      if(rec?.check_in){
+        present++;
+        const late=rec.minutes_late||0;
+        if(late>0){lateMins+=late;lateCount++;}
+        if(rec.minutes_worked){
+          totalWorked+=rec.minutes_worked;
+          totalExpected+=expectedMinutes;
+          const diff=rec.minutes_worked-expectedMinutes;
+          if(diff>0) totalExtraMins+=diff;
+          else if(diff<0) totalMissingMins+=Math.abs(diff);
+        }
+      } else if(rec?.status==='justified'){
+        justified++;
+      } else if(date<=today){
+        absent++;
+        totalExpected+=expectedMinutes;
+        totalMissingMins+=expectedMinutes; // día entero faltante
+      }
     }
-    return{scheduled,present,absent,justified,lateMins,lateCount,totalWork,pct:scheduled>0?Math.round(present/scheduled*100):0};
+    return{
+      scheduled,present,absent,justified,
+      lateMins,lateCount,
+      totalWorked,totalExpected,
+      totalExtraMins,totalMissingMins,
+      pct:scheduled>0?Math.round(present/scheduled*100):0,
+    };
   };
 
   const TABS=[

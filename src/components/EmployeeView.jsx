@@ -221,8 +221,6 @@ function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,onD
   useEffect(()=>{if(open){setStep('geo');setMsg('');setErr('');setLoading(false);setGeoData(null);}},[open]);
 
   const isIn=mode==='checkin';
-  const todayRec=records.find(r=>r.employee_id===profile.id&&r.date===localDateISO());
-  const todayException=exceptions.find(e=>e.date===localDateISO());
   const todayDow=new Date().getDay();
   const sched=schedule[todayDow];
 
@@ -346,7 +344,7 @@ function JornadaStatus({jornada,sched,todayRec}) {
 export default function EmployeeView({profile,onLogout}) {
   const [hq,setHq]=useState(null);
   const [schedule,setSchedule]=useState({});
-  const [todayRec,setTodayRec]=useState(null);
+  const [_todayRecState,setTodayRec]=useState(null); // legacy - now derived from records
   const [history,setHistory]=useState([]);
   const [holidays,setHolidays]=useState([]);
   const [tab,setTab]=useState('today');
@@ -424,6 +422,8 @@ export default function EmployeeView({profile,onLogout}) {
 
   const todayDow=new Date().getDay();
   const todaySched=schedule[todayDow];
+  const todayRec=records.find(r=>r.employee_id===profile.id&&r.date===localDateISO());
+  const todayException=exceptions.find(e=>e.date===localDateISO());
   const isHoliday=holidays.some(h=>h.date===localDateISO());
   const jornada=calcJornada(todayRec,todaySched);
   const workedMin=todayRec?.check_in&&todayRec?.check_out?Math.round((new Date(todayRec.check_out)-new Date(todayRec.check_in))/60000):null;
