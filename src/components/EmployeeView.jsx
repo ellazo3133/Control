@@ -4,7 +4,7 @@ import MonthCalendar from './MonthCalendar';
 import VacacionesView from './VacacionesView';
 import LicenciasView from './LicenciasView';
 import TareasView from './TareasView';
-import { getEmployeePayroll, getEmployeeExtraHours, notifyAdminLate, notifyAdminAbsent, getWeekRecords, getMyTasks, updateTaskStatus } from '../lib/supabase';
+import { getEmployeePayroll, getEmployeeExtraHours, notifyAdminLate, notifyAdminAbsent, getWeekRecords, getMyTasks, updateTaskStatus, getScheduleExceptions } from '../lib/supabase';
 import {
   getHQ, getSchedules, getTodayRecord, getRecordsByEmployee,
   getHolidays, checkIn, checkOut, updateProfile,
@@ -222,6 +222,7 @@ function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,onD
 
   const isIn=mode==='checkin';
   const todayRec=records.find(r=>r.employee_id===profile.id&&r.date===localDateISO());
+  const todayException=exceptions.find(e=>e.date===localDateISO());
   const todayDow=new Date().getDay();
   const sched=schedule[todayDow];
 
@@ -360,6 +361,7 @@ export default function EmployeeView({profile,onLogout}) {
   const [empExtras,setEmpExtras]=useState([]);
   const [weekRecs,setWeekRecs]=useState([]);
   const [pendingTasks,setPendingTasks]=useState([]);
+  const [exceptions,setExceptions]=useState([]);
   const { scheduleCheckoutReminder, notifPermission } = usePWA(); // {tipo, jornada}
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
@@ -385,6 +387,7 @@ export default function EmployeeView({profile,onLogout}) {
   useEffect(()=>{
     getWeekRecords(profile.id).then(setWeekRecs).catch(()=>{});
     getMyTasks(profile.id).then(setPendingTasks).catch(()=>{});
+    getScheduleExceptions(profile.id, new Date().toISOString().slice(0,7)).then(setExceptions).catch(()=>{});
   },[profile.id]);
 
   const handleRegBio=async()=>{
@@ -552,6 +555,33 @@ export default function EmployeeView({profile,onLogout}) {
           </div>
         )}
 
+        {/* Exception banner */}
+        {todayException&&(
+          <div className={`rounded-3xl shadow-sm border px-5 py-4 flex items-start gap-3
+            ${todayException.type==='free'?'bg-red-50 border-red-200':
+              todayException.type==='half'?'bg-amber-50 border-amber-200':'bg-sky-50 border-sky-200'}`}>
+            <span className="text-2xl flex-shrink-0">
+              {todayException.type==='free'?'🚫':todayException.type==='half'?'🕐':'⏰'}
+            </span>
+            <div>
+              <p className={`text-sm font-bold ${todayException.type==='free'?'text-red-700':todayException.type==='half'?'text-amber-700':'text-sky-700'}`}>
+                {todayException.type==='free'?'Hoy no trabajás':
+                 todayException.type==='half'?'Hoy es media jornada':'Hoy tenés horario especial'}
+              </p>
+              {todayException.start_time&&(
+                <p className={`text-xs mt-0.5 ${todayException.type==='free'?'text-red-500':todayException.type==='half'?'text-amber-600':'text-sky-600'}`}>
+                  {todayException.start_time.slice(0,5)} — {todayException.end_time?.slice(0,5)}
+                </p>
+              )}
+              {todayException.note&&(
+                <p className={`text-xs italic mt-0.5 ${todayException.type==='free'?'text-red-400':todayException.type==='half'?'text-amber-500':'text-sky-500'}`}>
+                  "{todayException.note}"
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Task notification banner */}
         {pendingTasks.length > 0 && (
           <div
@@ -666,6 +696,7 @@ export default function EmployeeView({profile,onLogout}) {
                   records={history}
                   schedMap={schedule}
                   holidays={holidays}
+                  exceptions={exceptions}
                   today={localDateISO()}
                 />
               </div>

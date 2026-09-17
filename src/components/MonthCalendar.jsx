@@ -5,7 +5,7 @@ const DAYS_HEADER = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : null;
 const timeToMins = t => { if(!t)return 0; const[h,m]=(t.slice(0,5)).split(':').map(Number);return h*60+m; };
 
-export default function MonthCalendar({ month, records, schedMap, holidays, onDayClick, today }) {
+export default function MonthCalendar({ month, records, schedMap, holidays, exceptions, onDayClick, today }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const [y, m] = month.split('-').map(Number);
   const firstDay = new Date(y, m-1, 1).getDay(); // 0=Dom
@@ -22,10 +22,12 @@ export default function MonthCalendar({ month, records, schedMap, holidays, onDa
     const sched = schedMap[dow];
     const rec = (records||[]).find(r => r.date === date || r.date === date.slice(0,10));
     const isHoliday = holidaySet.has(date);
+    const exception = (exceptions||[]).find(e=>e.date===date);
     const isFuture = date > todayISO;
     const isToday = date === todayISO;
     const hasShift = sched?.active;
 
+    let excState = exception ? (exception.type==='free'?'excepcion_libre':'excepcion_horario') : null;
     let estado = 'libre';
     if (isHoliday) estado = 'feriado';
     else if (!hasShift) estado = 'libre';
@@ -44,6 +46,8 @@ export default function MonthCalendar({ month, records, schedMap, holidays, onDa
   }
 
   const bgMap = {
+    excepcion_libre:   'bg-red-300',
+    excepcion_horario: 'bg-indigo-400',
     ok:         'bg-emerald-500',
     tarde:      'bg-amber-400',
     ausente:    'bg-red-400',
@@ -83,7 +87,7 @@ export default function MonthCalendar({ month, records, schedMap, holidays, onDa
           return (
             <div key={cell.date} style={{position:"relative"}}
               onClick={() => {
-                if (cell.isHoliday) { setSelectedDay(selectedDay===cell.date?null:cell.date); return; }
+                if (cell.isHoliday||cell.exception) { setSelectedDay(selectedDay===cell.date?null:cell.date); return; }
                 if (canClick) onDayClick(cell);
               }}
               className={`bg-white h-14 sm:h-16 flex flex-col items-center justify-start pt-1.5 gap-0.5 transition-all
@@ -99,6 +103,8 @@ export default function MonthCalendar({ month, records, schedMap, holidays, onDa
               {/* Status dot */}
               {cell.hasShift || cell.isHoliday ? (
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center ${bgMap[cell.estado]}`}>
+                  {cell.estado==='excepcion_libre'&&<span className="text-white" style={{fontSize:'10px'}}>🚫</span>}
+                  {cell.estado==='excepcion_horario'&&<span className="text-white" style={{fontSize:'10px'}}>⏰</span>}
                   {cell.estado==='ok'&&<span className="text-white text-xs">✓</span>}
                   {cell.estado==='tarde'&&<span className="text-white text-xs">⏰</span>}
                   {cell.estado==='ausente'&&<span className="text-white text-xs">✗</span>}
@@ -112,6 +118,13 @@ export default function MonthCalendar({ month, records, schedMap, holidays, onDa
                 </div>
               )}
 
+              {cell.exception&&selectedDay===cell.date&&(
+                <div style={{position:'absolute',bottom:'100%',left:'50%',transform:'translateX(-50%)',background:'#312e81',color:'white',fontSize:'10px',borderRadius:'8px',padding:'4px 8px',whiteSpace:'nowrap',zIndex:20,pointerEvents:'none',marginBottom:'4px',boxShadow:'0 4px 12px rgba(0,0,0,0.3)'}}>
+                  {cell.exception.type==='free'?'No trabaja hoy':
+                   (cell.exception.start_time?.slice(0,5)||'')+' — '+(cell.exception.end_time?.slice(0,5)||'')}
+                  {cell.exception.note?' · "'+cell.exception.note+'"':''}
+                </div>
+              )}
               {cell.isHoliday&&selectedDay===cell.date&&(
                 <div style={{position:'absolute',bottom:'100%',left:'50%',transform:'translateX(-50%)',background:'#111827',color:'white',fontSize:'10px',borderRadius:'8px',padding:'4px 8px',whiteSpace:'nowrap',zIndex:20,pointerEvents:'none',marginBottom:'4px',boxShadow:'0 4px 12px rgba(0,0,0,0.3)'}}>
                   {(holidays||[]).find(h=>h.date===cell.date)?.name||'Feriado'}

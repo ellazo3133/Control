@@ -431,6 +431,52 @@ export const calcVacationDays = (hireDate, referenceDate = new Date()) => {
   return 35;
 };
 
+// ─── EXCEPCIONES DE HORARIO ──────────────────────────────────────────────────
+
+export const getScheduleExceptions = async (employeeId, month) => {
+  const start = month + '-01';
+  const [y,m] = month.split('-').map(Number);
+  const end = new Date(y,m,0).toISOString().split('T')[0];
+  const { data, error } = await supabase.from('schedule_exceptions')
+    .select('*').eq('employee_id', employeeId).gte('date', start).lte('date', end);
+  if (error) return [];
+  return data || [];
+};
+
+export const getExceptionsForDate = async (date) => {
+  const { data } = await supabase.from('schedule_exceptions')
+    .select('*, profiles!schedule_exceptions_employee_id_fkey(name,avatar)')
+    .eq('date', date).order('created_at');
+  return data || [];
+};
+
+export const getExceptionsForMonth = async (month) => {
+  const start = month + '-01';
+  const [y,m] = month.split('-').map(Number);
+  const end = new Date(y,m,0).toISOString().split('T')[0];
+  const { data } = await supabase.from('schedule_exceptions')
+    .select('*, profiles!schedule_exceptions_employee_id_fkey(name,avatar)')
+    .gte('date', start).lte('date', end).order('date');
+  return data || [];
+};
+
+export const upsertScheduleException = async ({ employeeId, date, type, startTime, endTime, note, createdBy }) => {
+  const { data, error } = await supabase.from('schedule_exceptions')
+    .upsert({
+      employee_id: employeeId, date, type,
+      start_time: startTime||null, end_time: endTime||null,
+      note: note||null, created_by: createdBy,
+    }, { onConflict: 'employee_id,date' })
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteScheduleException = async (id) => {
+  const { error } = await supabase.from('schedule_exceptions').delete().eq('id', id);
+  if (error) throw error;
+};
+
 // ─── LICENCIAS ESPECIALES ────────────────────────────────────────────────────
 export const LEAVE_TYPES = {
   sick:        { label:'Enfermedad',           icon:'🤒', color:'red',    lctDays: null, hint:'3 meses si < 5 años de antigüedad, 6 meses si ≥ 5 años (LCT art.208)' },
