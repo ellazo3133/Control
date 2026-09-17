@@ -650,14 +650,32 @@ export default function EmployeeView({profile,onLogout}) {
           );
         })()}
 
-        {/* Tabs */}
-        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex flex-wrap border-b border-gray-100">
-            {[['schedule','Horario'],['calendar','Calendario'],['history','Historial'],['sueldo','Sueldo'],['vacaciones','Vacac.'],['licencias','Licencias'],['tareas','Tareas']].map(([t,l])=>(
+        {/* Section grid */}
+        <div className="grid grid-cols-4 gap-2.5">
+          {[
+            ['schedule', '📅', 'Horario'],
+            ['calendar', '🗓', 'Calendario'],
+            ['history',  '📋', 'Historial'],
+            ['sueldo',   '💰', 'Sueldo'],
+            ['vacaciones','🏖️','Vacaciones'],
+            ['licencias','📄', 'Licencias'],
+            ['tareas',   '✅', 'Tareas'],
+          ].map(([t, icon, label]) => (
+            <button key={t} onClick={()=>setTab(tab===t?null:t)}
+              className={`flex flex-col items-center gap-1.5 py-3.5 px-1 rounded-2xl border-2 transition-all active:scale-95
+                ${tab===t
+                  ? 'border-sky-400 bg-sky-50 shadow-sm'
+                  : 'border-gray-100 bg-white hover:border-gray-200'}`}>
+              <span className="text-xl leading-none">{icon}</span>
+              <span className={`text-xs font-bold leading-tight text-center ${tab===t?'text-sky-700':'text-gray-400'}`}
+                style={{fontSize:'10px'}}>{label}</span>
+            </button>
+          ))}
+        </div>
 
-              <button key={t} onClick={()=>setTab(t)} className={`flex-shrink-0 flex-1 py-3.5 text-xs font-bold uppercase tracking-wide ${tab===t?'text-sky-600 border-b-2 border-sky-500':'text-gray-400'}`}>{l}</button>
-            ))}
-          </div>
+        {/* Section content */}
+        {tab && (
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-5">
             {tab==='schedule'&&(
               <div className="space-y-2">
@@ -832,6 +850,7 @@ export default function EmployeeView({profile,onLogout}) {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {hq&&<StepModal open={!!stepMode} onClose={()=>setStepMode(null)} mode={stepMode}
