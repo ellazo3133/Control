@@ -1,4 +1,4 @@
-const CACHE = 'asistencia-v1';
+const CACHE = 'asistencia-v3';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to cache on install
