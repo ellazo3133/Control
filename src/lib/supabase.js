@@ -467,12 +467,12 @@ export const createLeaveRequest = async ({ employeeId, type, subtype, startDate,
     .select().single();
   if (error) throw error;
   if (createdBy === 'employee') {
-    await supabase.from('admin_notifications').insert({
+    try { await supabase.from('admin_notifications').insert({
       type:'leave_request',
       title:`${LEAVE_TYPES[type]?.icon||'📋'} ${data.days} días — ${LEAVE_TYPES[type]?.label}`,
       body:`Solicitud de licencia del ${new Date(startDate+'T12:00:00').toLocaleDateString('es-AR')} al ${new Date(endDate+'T12:00:00').toLocaleDateString('es-AR')}`,
       data:{ employeeId, type, days },
-    }).catch(()=>{});
+    }); } catch(e) {}
   }
   return data;
 };
@@ -548,12 +548,12 @@ export const createVacationRequest = async ({ employeeId, startDate, endDate, re
     .select().single();
   if (error) throw error;
   // Add admin notification
-  await supabase.from('admin_notifications').insert({
+  try { await supabase.from('admin_notifications').insert({
     type:'vacation_request',
     title:`🏖️ Solicitud de vacaciones`,
     body:`${days} días corridos del ${new Date(startDate+'T12:00:00').toLocaleDateString('es-AR')} al ${new Date(endDate+'T12:00:00').toLocaleDateString('es-AR')}`,
     data:{ employeeId, startDate, endDate, days },
-  }).catch(()=>{});
+  }); } catch(e) {}
   return data;
 };
 

@@ -4,7 +4,7 @@ import MonthCalendar from './MonthCalendar';
 import VacacionesView from './VacacionesView';
 import LicenciasView from './LicenciasView';
 import TareasView from './TareasView';
-import { getEmployeePayroll, getEmployeeExtraHours, notifyAdminLate, notifyAdminAbsent, getWeekRecords } from '../lib/supabase';
+import { getEmployeePayroll, getEmployeeExtraHours, notifyAdminLate, notifyAdminAbsent, getWeekRecords, getMyTasks, updateTaskStatus } from '../lib/supabase';
 import {
   getHQ, getSchedules, getTodayRecord, getRecordsByEmployee,
   getHolidays, checkIn, checkOut, updateProfile,
@@ -359,6 +359,7 @@ export default function EmployeeView({profile,onLogout}) {
   const [payroll,setPayroll]=useState(null);
   const [empExtras,setEmpExtras]=useState([]);
   const [weekRecs,setWeekRecs]=useState([]);
+  const [pendingTasks,setPendingTasks]=useState([]);
   const { scheduleCheckoutReminder, notifPermission } = usePWA(); // {tipo, jornada}
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
@@ -383,6 +384,7 @@ export default function EmployeeView({profile,onLogout}) {
 
   useEffect(()=>{
     getWeekRecords(profile.id).then(setWeekRecs).catch(()=>{});
+    getMyTasks(profile.id).then(setPendingTasks).catch(()=>{});
   },[profile.id]);
 
   const handleRegBio=async()=>{
@@ -550,6 +552,28 @@ export default function EmployeeView({profile,onLogout}) {
           </div>
         )}
 
+        {/* Task notification banner */}
+        {pendingTasks.length > 0 && (
+          <div
+            onClick={()=>setTab('tareas')}
+            className="bg-white rounded-3xl shadow-sm border-l-4 border-l-sky-500 border border-gray-100 px-5 py-4 flex items-center gap-3 cursor-pointer active:scale-[0.99] transition-all">
+            <div className="w-10 h-10 rounded-2xl bg-sky-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-gray-900">
+                {pendingTasks.length === 1 ? 'Tenés 1 tarea pendiente' : `Tenés ${pendingTasks.length} tareas pendientes`}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">{pendingTasks[0]?.title}{pendingTasks.length > 1 ? ` y ${pendingTasks.length-1} más` : ''}</p>
+            </div>
+            <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+            </svg>
+          </div>
+        )}
+
         {/* Weekly summary */}
         {weekRecs.length > 0 && (() => {
           const totalWorked = weekRecs.reduce((a,r) => a+(r.minutes_worked||0), 0);
@@ -598,9 +622,8 @@ export default function EmployeeView({profile,onLogout}) {
 
         {/* Tabs */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="flex border-b border-gray-100 overflow-x-auto">
-            {[['schedule','Horario'],['calendar','Calendario'],['history','Historial'],['sueldo','Sueldo'],['vacaciones','Vacaciones'],['licencias','Licencias'],['tareas','Tareas']].map(([t,l])=>(
-
+          <div className="flex flex-wrap border-b border-gray-100">
+            {[['schedule','Horario'],['calendar','Calendario'],['history','Historial'],['sueldo','Sueldo'],['vacaciones','Vacac.'],['licencias','Licencias'],['tareas','Tareas']].map(([t,l])=>(
 
               <button key={t} onClick={()=>setTab(t)} className={`flex-shrink-0 flex-1 py-3.5 text-xs font-bold uppercase tracking-wide ${tab===t?'text-sky-600 border-b-2 border-sky-500':'text-gray-400'}`}>{l}</button>
             ))}

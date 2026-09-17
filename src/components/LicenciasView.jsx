@@ -54,22 +54,6 @@ export default function LicenciasView({ profile, hireDate }) {
     <div className="space-y-4">
       {toast&&<div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-5 py-3 rounded-2xl text-sm font-semibold shadow-xl text-white ${toast.type==='error'?'bg-red-500':'bg-emerald-500'}`}>{toast.msg}</div>}
 
-      {/* LCT reference */}
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-        <h3 className="font-bold text-gray-900 text-sm mb-3">Licencias según la ley 🇦🇷</h3>
-        <div className="space-y-2">
-          {Object.entries(LEAVE_TYPES).filter(([k])=>k!=='other').map(([key,t])=>(
-            <div key={key} className="flex items-start gap-2.5 py-2 border-b border-gray-50 last:border-0">
-              <span className="text-lg flex-shrink-0">{t.icon}</span>
-              <div className="flex-1">
-                <p className="text-xs font-bold text-gray-800">{t.label}</p>
-                <p className="text-xs text-gray-400">{t.hint}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* New request button */}
       {!showNew && (
         <button onClick={()=>setShowNew(true)}

@@ -1,10 +1,12 @@
 // Calendario visual mensual - usado en admin y empleado
+import { useState } from 'react';
 const DAYS_HEADER = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
 const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : null;
 const timeToMins = t => { if(!t)return 0; const[h,m]=(t.slice(0,5)).split(':').map(Number);return h*60+m; };
 
 export default function MonthCalendar({ month, records, schedMap, holidays, onDayClick, today }) {
+  const [selectedDay, setSelectedDay] = useState(null);
   const [y, m] = month.split('-').map(Number);
   const firstDay = new Date(y, m-1, 1).getDay(); // 0=Dom
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -79,8 +81,11 @@ export default function MonthCalendar({ month, records, schedMap, holidays, onDa
           if (!cell) return <div key={`blank-${i}`} className="bg-white h-14 sm:h-16"/>;
           const canClick = cell.hasShift && !cell.isFuture && onDayClick;
           return (
-            <div key={cell.date}
-              onClick={() => canClick && onDayClick(cell)}
+            <div key={cell.date} style={{position:"relative"}}
+              onClick={() => {
+                if (cell.isHoliday) { setSelectedDay(selectedDay===cell.date?null:cell.date); return; }
+                if (canClick) onDayClick(cell);
+              }}
               className={`bg-white h-14 sm:h-16 flex flex-col items-center justify-start pt-1.5 gap-0.5 transition-all
                 ${canClick ? 'cursor-pointer hover:bg-gray-50 active:bg-gray-100' : ''}
                 ${cell.isToday ? 'ring-2 ring-sky-400 ring-inset' : ''}`}>
@@ -107,6 +112,11 @@ export default function MonthCalendar({ month, records, schedMap, holidays, onDa
                 </div>
               )}
 
+              {cell.isHoliday&&selectedDay===cell.date&&(
+                <div style={{position:'absolute',bottom:'100%',left:'50%',transform:'translateX(-50%)',background:'#111827',color:'white',fontSize:'10px',borderRadius:'8px',padding:'4px 8px',whiteSpace:'nowrap',zIndex:20,pointerEvents:'none',marginBottom:'4px',boxShadow:'0 4px 12px rgba(0,0,0,0.3)'}}>
+                  {(holidays||[]).find(h=>h.date===cell.date)?.name||'Feriado'}
+                </div>
+              )}
               {/* Time tiny */}
               {cell.rec?.check_in && (
                 <span className="text-gray-400 font-mono leading-none" style={{fontSize:'9px'}}>
