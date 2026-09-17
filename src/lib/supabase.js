@@ -477,6 +477,15 @@ export const createLeaveRequest = async ({ employeeId, type, subtype, startDate,
   return data;
 };
 
+export const updateLeaveRequest = async (id, { startDate, endDate, reason }) => {
+  const days = Math.round((new Date(endDate)-new Date(startDate))/(1000*60*60*24))+1;
+  const { data, error } = await supabase.from('leave_requests')
+    .update({ start_date:startDate, end_date:endDate, days, reason })
+    .eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+};
+
 export const reviewLeaveRequest = async (id, status, adminNote, adminId) => {
   const { data, error } = await supabase.from('leave_requests')
     .update({ status, admin_note:adminNote||null, reviewed_by:adminId, reviewed_at:new Date().toISOString() })
@@ -557,11 +566,54 @@ export const createVacationRequest = async ({ employeeId, startDate, endDate, re
   return data;
 };
 
+// Auto-sync vacation balance from approved requests
+export const syncVacationBalance = async (employeeId, year) => {
+  const y = year || new Date().getFullYear();
+  // Get all approved requests for this employee in this year
+  const { data: approved } = await supabase.from('vacation_requests')
+    .select('days, start_date, end_date, status')
+    .eq('employee_id', employeeId)
+    .in('status', ['approved'])
+    .gte('start_date', `${y}-01-01`)
+    .lte('start_date', `${y}-12-31`);
+
+  const today = new Date().toISOString().split('T')[0];
+  let taken = 0, pending = 0;
+  (approved||[]).forEach(r => {
+    if (r.end_date <= today) taken += r.days;
+    else pending += r.days;
+  });
+
+  // Get total days from balance or calc from profile
+  const { data: bal } = await supabase.from('vacation_balance')
+    .select('days_total, employee_id').eq('employee_id', employeeId).eq('year', y).maybeSingle();
+
+  const days_total = bal?.days_total || 0;
+  await supabase.from('vacation_balance')
+    .upsert({ employee_id:employeeId, year:y, days_total, days_taken:taken, days_pending:pending },
+      { onConflict:'employee_id,year' });
+  return { days_total, days_taken:taken, days_pending:pending };
+};
+
+export const updateVacationRequest = async (id, { startDate, endDate, reason }) => {
+  const days = Math.round((new Date(endDate)-new Date(startDate))/(1000*60*60*24))+1;
+  const { data, error } = await supabase.from('vacation_requests')
+    .update({ start_date:startDate, end_date:endDate, days, reason })
+    .eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+};
+
 export const reviewVacationRequest = async (requestId, status, adminNote, adminId) => {
   const { data, error } = await supabase.from('vacation_requests')
     .update({ status, admin_note:adminNote||null, reviewed_by:adminId, reviewed_at:new Date().toISOString() })
     .eq('id', requestId).select().single();
   if (error) throw error;
+  // Auto-sync balance
+  if (data?.employee_id) {
+    const year = new Date(data.start_date).getFullYear();
+    await syncVacationBalance(data.employee_id, year).catch(()=>{});
+  }
   return data;
 };
 

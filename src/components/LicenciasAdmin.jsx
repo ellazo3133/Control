@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LEAVE_TYPES, getLctDays, calcSeniority, getAllLeaveRequests, createLeaveRequest, reviewLeaveRequest } from '../lib/supabase';
+import { LEAVE_TYPES, getLctDays, calcSeniority, getAllLeaveRequests, createLeaveRequest, reviewLeaveRequest, updateLeaveRequest } from '../lib/supabase';
 
 const fmtDate = s => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
 const fmtDateShort = s => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'}) : '—';
@@ -17,11 +17,65 @@ const statusBadge = s => ({
   cancelled: <Badge color="gray">Cancelada</Badge>,
 }[s]);
 
+function EditLeaveModal({req, onSave, onClose}) {
+  const [start, setStart] = useState(req.start_date||'');
+  const [end,   setEnd]   = useState(req.end_date||'');
+  const [reason,setReason]= useState(req.reason||'');
+  const [saving,setSaving]= useState(false);
+  const t = LEAVE_TYPES[req.type]||LEAVE_TYPES.other;
+  const days = start&&end ? Math.round((new Date(end)-new Date(start))/(1000*60*60*24))+1 : 0;
+  const doSave = async () => {
+    if (!start||!end||end<start) return;
+    setSaving(true);
+    await onSave(req.id, { startDate:start, endDate:end, reason });
+    setSaving(false);
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}/>
+      <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 space-y-4">
+        <h2 className="text-lg font-bold text-gray-900">Editar licencia</h2>
+        <div className="bg-gray-50 rounded-2xl p-3">
+          <p className="text-sm font-bold text-gray-800">{t.icon} {t.label} — {req.profiles?.name}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Desde</label>
+            <input type="date" value={start} onChange={e=>setStart(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Hasta</label>
+            <input type="date" value={end} min={start} onChange={e=>setEnd(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+          </div>
+        </div>
+        {days>0&&<div className="bg-sky-50 rounded-2xl p-3 text-center"><p className="text-xl font-black text-sky-700">{days} días corridos</p></div>}
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Motivo / nota</label>
+          <input value={reason} onChange={e=>setReason(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold border-2 border-gray-200 text-gray-500">Cancelar</button>
+          <button onClick={doSave} disabled={saving||days<1}
+            className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+            style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
+            {saving?'Guardando...':'Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LicenciasAdmin({ employees, adminId, showToast }) {
   const [requests, setRequests] = useState([]);
   const [filter,   setFilter]   = useState('pending');
   const [showNew,  setShowNew]  = useState(false);
   const [reviewReq,setReviewReq]= useState(null);
+  const [editReq,  setEditReq]  = useState(null);
   const [reviewNote,setReviewNote]=useState('');
   const [form,     setForm]     = useState({ empId:'', type:'sick', subtype:'', start:'', end:'', reason:'' });
   const [saving,   setSaving]   = useState(false);
@@ -40,6 +94,12 @@ export default function LicenciasAdmin({ employees, adminId, showToast }) {
       await load(); showToast('✓ Licencia cargada');
     } catch(e){ showToast(e.message,'error'); }
     setSaving(false);
+  };
+
+  const handleEdit = async (id, updates) => {
+    await updateLeaveRequest(id, updates);
+    await load();
+    showToast('Licencia actualizada');
   };
 
   const handleReview = async (status) => {
@@ -136,11 +196,16 @@ export default function LicenciasAdmin({ employees, adminId, showToast }) {
                   {r.reason&&<p className="text-xs text-gray-400 italic mt-0.5">"{r.reason}"</p>}
                   {r.admin_note&&<p className="text-xs text-sky-600 mt-1">Nota: "{r.admin_note}"</p>}
                 </div>
-                {r.status==='pending'&&(
-                  <button onClick={()=>{setReviewReq(r);setReviewNote('');}} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-50 text-sky-700 hover:bg-sky-100 flex-shrink-0">
-                    Revisar
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={()=>setEditReq(r)} className="p-2 text-gray-300 hover:text-sky-500 hover:bg-sky-50 rounded-xl">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                   </button>
-                )}
+                  {r.status==='pending'&&(
+                    <button onClick={()=>{setReviewReq(r);setReviewNote('');}} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-50 text-sky-700 hover:bg-sky-100">
+                      Revisar
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -148,6 +213,9 @@ export default function LicenciasAdmin({ employees, adminId, showToast }) {
       </div>
 
       {/* Review modal */}
+      {editReq&&(
+        <EditLeaveModal req={editReq} onSave={handleEdit} onClose={()=>setEditReq(null)}/>
+      )}
       {reviewReq&&(
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={()=>setReviewReq(null)}/>

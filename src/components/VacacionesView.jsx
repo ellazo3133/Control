@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   calcVacationDays, calcSeniority, getVacationBalance, getVacationRequests,
-  createVacationRequest, cancelVacationRequest, localDateISO
+  createVacationRequest, cancelVacationRequest, updateVacationRequest, localDateISO
 } from '../lib/supabase';
 
 const fmtDate = s => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
@@ -64,6 +64,18 @@ export default function VacacionesView({ profile, hireDate }) {
       await load();
       showToast('✓ Solicitud enviada al admin');
     } catch(e) { setFormErr(e.message); }
+    setSaving(false);
+  };
+
+  const handleEdit = async () => {
+    if (!editForm.start||!editForm.end) return;
+    setSaving(true);
+    try {
+      await updateVacationRequest(editReq.id, { startDate:editForm.start, endDate:editForm.end, reason:editForm.reason });
+      setEditReq(null);
+      await load();
+      showToast('✓ Solicitud actualizada');
+    } catch(e){ setFormErr(e.message); }
     setSaving(false);
   };
 
@@ -234,16 +246,64 @@ export default function VacacionesView({ profile, hireDate }) {
                   )}
                 </div>
                 {r.status==='pending'&&(
-                  <button onClick={()=>handleCancel(r.id)}
-                    className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1.5 rounded-xl hover:bg-red-50 flex-shrink-0">
-                    Cancelar
-                  </button>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <button onClick={()=>{setEditReq(r);setEditForm({start:r.start_date,end:r.end_date,reason:r.reason||''}); setFormErr('');}}
+                      className="text-xs text-sky-500 hover:text-sky-700 px-2.5 py-1.5 rounded-xl hover:bg-sky-50">
+                      Editar
+                    </button>
+                    <button onClick={()=>handleCancel(r.id)}
+                      className="text-xs text-red-400 hover:text-red-600 px-2.5 py-1.5 rounded-xl hover:bg-red-50">
+                      Cancelar
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           ))}
         </div>
       </div>
+      {/* Edit modal */}
+      {editReq&&(
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={()=>setEditReq(null)}/>
+          <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 space-y-4">
+            <h2 className="text-lg font-bold text-gray-900">Editar solicitud</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Desde</label>
+                <input type="date" value={editForm.start} min={localDateISO()}
+                  onChange={e=>setEditForm(p=>({...p,start:e.target.value}))}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Hasta</label>
+                <input type="date" value={editForm.end} min={editForm.start}
+                  onChange={e=>setEditForm(p=>({...p,end:e.target.value}))}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+              </div>
+            </div>
+            {editForm.start&&editForm.end&&(
+              <div className="bg-sky-50 rounded-2xl p-3 text-center">
+                <p className="text-xl font-black text-sky-700">{Math.round((new Date(editForm.end)-new Date(editForm.start))/(1000*60*60*24))+1} días corridos</p>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Motivo</label>
+              <input value={editForm.reason} onChange={e=>setEditForm(p=>({...p,reason:e.target.value}))}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+            </div>
+            {formErr&&<p className="text-red-500 text-xs bg-red-50 px-3 py-2.5 rounded-xl">{formErr}</p>}
+            <div className="flex gap-2">
+              <button onClick={()=>setEditReq(null)} className="flex-1 py-3 rounded-2xl text-sm font-bold border-2 border-gray-200 text-gray-500">Cancelar</button>
+              <button onClick={handleEdit} disabled={saving}
+                className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+                style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
+                {saving?'Guardando...':'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

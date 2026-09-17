@@ -1,27 +1,40 @@
 import { useState, useEffect } from 'react';
 import {
-  getAllVacationRequests, reviewVacationRequest,
-  calcVacationDays, calcSeniority, getVacationBalance, upsertVacationBalance
+  getAllVacationRequests, reviewVacationRequest, updateVacationRequest,
+  calcVacationDays, calcSeniority, getVacationBalance, upsertVacationBalance,
+  syncVacationBalance, supabase
 } from '../lib/supabase';
 
 const fmtDate = s => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—';
 const fmtDateShort = s => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'short'}) : '—';
+const fmtMoney = n => new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n||0);
 
 const Badge = ({color,children}) => {
   const c={green:'bg-emerald-50 text-emerald-700 border-emerald-200',red:'bg-red-50 text-red-600 border-red-200',
     yellow:'bg-amber-50 text-amber-700 border-amber-200',blue:'bg-sky-50 text-sky-700 border-sky-200',
-    gray:'bg-gray-50 text-gray-500 border-gray-200',purple:'bg-violet-50 text-violet-700 border-violet-200',
-    teal:'bg-teal-50 text-teal-700 border-teal-200'};
+    gray:'bg-gray-50 text-gray-500 border-gray-200'};
   return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-semibold border ${c[color]||c.gray}`}>{children}</span>;
 };
 
-function ReviewModal({req, onReview, onClose}) {
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
+const statusBadge = s => ({
+  pending:   <Badge color="yellow">⏳ Pendiente</Badge>,
+  approved:  <Badge color="green">✓ Aprobada</Badge>,
+  rejected:  <Badge color="red">✗ Rechazada</Badge>,
+  cancelled: <Badge color="gray">Cancelada</Badge>,
+}[s]);
 
-  const doReview = async (status) => {
+// Edit request modal
+function EditRequestModal({req, onSave, onClose}) {
+  const [start, setStart] = useState(req.start_date||'');
+  const [end,   setEnd]   = useState(req.end_date||'');
+  const [reason,setReason]= useState(req.reason||'');
+  const [saving,setSaving]= useState(false);
+  const days = start&&end ? Math.round((new Date(end)-new Date(start))/(1000*60*60*24))+1 : 0;
+
+  const doSave = async () => {
+    if (!start||!end||end<start) return;
     setSaving(true);
-    await onReview(req.id, status, note);
+    await onSave(req.id, { startDate:start, endDate:end, reason });
     setSaving(false);
     onClose();
   };
@@ -30,51 +43,89 @@ function ReviewModal({req, onReview, onClose}) {
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}/>
       <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 space-y-4">
-        <h2 className="text-lg font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>
-          Revisar solicitud
-        </h2>
-        <div className="bg-gray-50 rounded-2xl p-4">
-          <p className="font-bold text-gray-900 text-sm">{req.profiles?.name}</p>
-          <p className="text-sm text-gray-600 mt-1">
-            🏖️ {req.days} días corridos
-          </p>
-          <p className="text-sm text-gray-600">
-            {fmtDate(req.start_date)} → {fmtDate(req.end_date)}
-          </p>
-          {req.reason&&<p className="text-xs text-gray-400 italic mt-1">"{req.reason}"</p>}
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-            Nota para el empleado (opcional)
-          </label>
-          <textarea value={note} onChange={e=>setNote(e.target.value)} rows={2}
-            placeholder="Aprobado, coordinalo con el equipo... / Rechazado porque..."
-            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none"/>
+        <h2 className="text-lg font-bold text-gray-900">Editar solicitud</h2>
+        <div className="bg-gray-50 rounded-2xl p-3 text-xs text-gray-500">
+          <p className="font-semibold text-gray-700">{req.profiles?.name}</p>
+          <p>Solicitud original: {fmtDate(req.start_date)} → {fmtDate(req.end_date)} ({req.days} días)</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={()=>doReview('rejected')} disabled={saving}
-            className="py-3 rounded-2xl text-sm font-bold border-2 border-red-200 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50">
-            ✗ Rechazar
-          </button>
-          <button onClick={()=>doReview('approved')} disabled={saving}
-            className="py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
-            style={{background:'linear-gradient(135deg,#059669,#0d9488)'}}>
-            ✓ Aprobar
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Desde</label>
+            <input type="date" value={start} onChange={e=>setStart(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Hasta</label>
+            <input type="date" value={end} min={start} onChange={e=>setEnd(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+          </div>
+        </div>
+        {days>0 && <div className="bg-sky-50 rounded-2xl p-3 text-center"><p className="text-xl font-black text-sky-700">{days} días corridos</p></div>}
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Motivo</label>
+          <input value={reason} onChange={e=>setReason(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-bold border-2 border-gray-200 text-gray-500">Cancelar</button>
+          <button onClick={doSave} disabled={saving||days<1}
+            className="flex-1 py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+            style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
+            {saving?'Guardando...':'Guardar'}
           </button>
         </div>
-        <button onClick={onClose} className="w-full text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
       </div>
     </div>
   );
 }
 
-function BalanceModal({emp, onClose, onSave}) {
+// Review modal
+function ReviewModal({req, onReview, onClose}) {
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const doReview = async (status) => {
+    setSaving(true);
+    await onReview(req.id, status, note);
+    setSaving(false);
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}/>
+      <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 space-y-4">
+        <h2 className="text-lg font-bold text-gray-900">Revisar solicitud</h2>
+        <div className="bg-gray-50 rounded-2xl p-4">
+          <p className="font-bold text-gray-900 text-sm">{req.profiles?.name}</p>
+          <p className="text-sm text-gray-600 mt-1">🏖️ {req.days} días corridos</p>
+          <p className="text-sm text-gray-600">{fmtDate(req.start_date)} → {fmtDate(req.end_date)}</p>
+          {req.reason&&<p className="text-xs text-gray-400 italic mt-1">"{req.reason}"</p>}
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Nota (opcional)</label>
+          <textarea value={note} onChange={e=>setNote(e.target.value)} rows={2}
+            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 resize-none"/>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button onClick={()=>doReview('rejected')} disabled={saving}
+            className="py-3 rounded-2xl text-sm font-bold border-2 border-red-200 text-red-600 bg-red-50">✗ Rechazar</button>
+          <button onClick={()=>doReview('approved')} disabled={saving}
+            className="py-3 rounded-2xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#059669,#0d9488)'}}>✓ Aprobar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Balance + history modal per employee
+function BalanceModal({emp, requests, onClose, onSave, onSyncBalance}) {
   const year = new Date().getFullYear();
   const [bal, setBal] = useState(null);
   const [form, setForm] = useState({ days_total:0, days_taken:0, days_pending:0, notes:'' });
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const vacDays = calcVacationDays(emp.hire_date);
   const seniority = calcSeniority(emp.hire_date);
+  const empReqs = requests.filter(r=>r.employee_id===emp.id);
 
   useEffect(()=>{
     getVacationBalance(emp.id, year).then(b=>{
@@ -82,6 +133,14 @@ function BalanceModal({emp, onClose, onSave}) {
       else  { setForm(p=>({...p,days_total:vacDays})); }
     });
   },[emp.id]);
+
+  const doSync = async () => {
+    setSyncing(true);
+    const result = await syncVacationBalance(emp.id, year);
+    setForm(p=>({...p, days_taken:result.days_taken, days_pending:result.days_pending}));
+    setSyncing(false);
+    onSyncBalance();
+  };
 
   const doSave = async () => {
     setSaving(true);
@@ -93,43 +152,75 @@ function BalanceModal({emp, onClose, onSave}) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}/>
-      <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 space-y-4">
-        <h2 className="text-lg font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>
-          Saldo de vacaciones — {emp.name}
-        </h2>
-        <div className="bg-gray-50 rounded-2xl p-4 space-y-1.5 text-xs">
-          <div className="flex justify-between"><span className="text-gray-400">Alta</span><span className="font-bold">{fmtDate(emp.hire_date)||'Sin fecha'}</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Antigüedad</span><span className="font-bold">{seniority.label}</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Días según LCT</span><span className="font-bold text-sky-600">{vacDays} días corridos</span></div>
-        </div>
-        {[
-          ['Días totales del año','days_total','Total que le corresponde (precompletado según LCT)'],
-          ['Días tomados','days_taken','Ya disfrutados efectivamente'],
-          ['Días aprobados pendientes','days_pending','Aprobados pero aún no tomados'],
-        ].map(([label,field,hint])=>(
-          <div key={field}>
-            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
-            <input type="number" min="0" value={form[field]}
-              onChange={e=>setForm(p=>({...p,[field]:parseInt(e.target.value)||0}))}
-              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
-            <p className="text-xs text-gray-400 mt-0.5">{hint}</p>
+      <div className="relative bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{emp.name}</h2>
+            <p className="text-xs text-gray-400">{seniority.label} · {vacDays} días según LCT {year}</p>
           </div>
-        ))}
-        <div className="bg-sky-50 rounded-2xl px-4 py-2.5 flex justify-between text-sm">
-          <span className="text-sky-600 font-semibold">Disponibles</span>
-          <span className="font-black text-sky-700">{form.days_total - form.days_taken - form.days_pending} días</span>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">✕</button>
         </div>
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Notas</label>
-          <input value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))}
-            placeholder="Vacaciones proporcionales, acuerdo especial..."
-            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+
+        <div className="overflow-y-auto flex-1 p-6 space-y-5">
+          {/* Saldo */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Saldo {year}</p>
+              <button onClick={doSync} disabled={syncing}
+                className="text-xs text-sky-600 font-bold px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 disabled:opacity-50">
+                {syncing?'Sincronizando...':'↻ Sincronizar automático'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">↻ Sincronizar calcula los días tomados y pendientes a partir de las solicitudes aprobadas.</p>
+            {[
+              ['Días totales del año','days_total'],
+              ['Días tomados','days_taken'],
+              ['Días aprobados pendientes','days_pending'],
+            ].map(([label,field])=>(
+              <div key={field} className="flex items-center gap-3">
+                <label className="text-xs text-gray-500 flex-1">{label}</label>
+                <input type="number" min="0" value={form[field]}
+                  onChange={e=>setForm(p=>({...p,[field]:parseInt(e.target.value)||0}))}
+                  className="w-20 px-3 py-2 rounded-xl border border-gray-200 text-sm text-center font-bold focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+              </div>
+            ))}
+            <div className="bg-sky-50 rounded-2xl px-4 py-2.5 flex justify-between text-sm">
+              <span className="text-sky-600 font-semibold">Disponibles</span>
+              <span className="font-black text-sky-700">{Math.max(0, form.days_total - form.days_taken - form.days_pending)} días</span>
+            </div>
+            <input value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))}
+              placeholder="Notas (acuerdos, proporcionales...)"
+              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+            <button onClick={doSave} disabled={saving}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+              style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
+              {saving?'Guardando...':'Guardar saldo'}
+            </button>
+          </div>
+
+          {/* Historial */}
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Historial de solicitudes</p>
+            {empReqs.length===0&&<p className="text-sm text-gray-400 text-center py-4">Sin solicitudes</p>}
+            <div className="space-y-2">
+              {empReqs.map(r=>(
+                <div key={r.id} className="bg-gray-50 rounded-2xl px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        {statusBadge(r.status)}
+                        <span className="text-xs font-bold text-gray-700">{r.days} días</span>
+                        <span className="text-xs text-gray-400">{new Date(r.start_date+'T12:00:00').getFullYear()}</span>
+                      </div>
+                      <p className="text-xs text-gray-600">{fmtDateShort(r.start_date)} → {fmtDateShort(r.end_date)}</p>
+                      {r.reason&&<p className="text-xs text-gray-400 italic">"{r.reason}"</p>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <button onClick={doSave} disabled={saving}
-          className="w-full py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
-          style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
-          {saving?'Guardando...':'Guardar saldo'}
-        </button>
       </div>
     </div>
   );
@@ -139,21 +230,27 @@ export default function VacacionesAdmin({ employees, adminId, showToast }) {
   const [requests, setRequests] = useState([]);
   const [filter,   setFilter]   = useState('pending');
   const [reviewReq,setReviewReq]= useState(null);
+  const [editReq,  setEditReq]  = useState(null);
   const [balEmp,   setBalEmp]   = useState(null);
-  const [tabV,     setTabV]     = useState('requests'); // 'requests' | 'employees'
+  const [tabV,     setTabV]     = useState('requests');
   const year = new Date().getFullYear();
 
   const load = async () => {
     const data = await getAllVacationRequests().catch(()=>[]);
     setRequests(data);
   };
-
   useEffect(()=>{ load(); },[]);
 
   const handleReview = async (id, status, note) => {
     await reviewVacationRequest(id, status, note, adminId);
     await load();
-    showToast(status==='approved'?'✓ Solicitud aprobada':'Solicitud rechazada', status==='approved'?'success':'warning');
+    showToast(status==='approved'?'✓ Aprobada — saldo actualizado automáticamente':'Rechazada');
+  };
+
+  const handleEdit = async (id, updates) => {
+    await updateVacationRequest(id, updates);
+    await load();
+    showToast('Solicitud actualizada');
   };
 
   const handleSaveBalance = async (empId, year, form) => {
@@ -161,22 +258,15 @@ export default function VacacionesAdmin({ employees, adminId, showToast }) {
     showToast('Saldo actualizado');
   };
 
-  const filtered = requests.filter(r => filter==='all' || r.status===filter);
   const pendingCount = requests.filter(r=>r.status==='pending').length;
-
-  const statusBadge = status => ({
-    pending:   <Badge color="yellow">⏳ Pendiente</Badge>,
-    approved:  <Badge color="green">✓ Aprobada</Badge>,
-    rejected:  <Badge color="red">✗ Rechazada</Badge>,
-    cancelled: <Badge color="gray">Cancelada</Badge>,
-  }[status]);
+  const filtered = requests.filter(r=>filter==='all'||r.status===filter);
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>Vacaciones</h2>
-          {pendingCount>0&&<p className="text-sm text-amber-600 font-semibold">{pendingCount} solicitud{pendingCount!==1?'es':''} pendiente{pendingCount!==1?'s':''}</p>}
+          {pendingCount>0&&<p className="text-sm text-amber-600 font-semibold">{pendingCount} pendiente{pendingCount!==1?'s':''}</p>}
         </div>
       </div>
 
@@ -190,19 +280,15 @@ export default function VacacionesAdmin({ employees, adminId, showToast }) {
         ))}
       </div>
 
-      {/* REQUESTS TAB */}
+      {/* REQUESTS */}
       {tabV==='requests'&&(
         <div className="space-y-4">
-          {/* Filter */}
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {[['pending','Pendientes'],['approved','Aprobadas'],['rejected','Rechazadas'],['all','Todas']].map(([v,l])=>(
               <button key={v} onClick={()=>setFilter(v)}
-                className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${filter===v?'bg-sky-100 text-sky-700':'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                {l}
-              </button>
+                className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold ${filter===v?'bg-sky-100 text-sky-700':'bg-gray-100 text-gray-500'}`}>{l}</button>
             ))}
           </div>
-
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 divide-y divide-gray-50">
             {filtered.length===0&&<p className="text-sm text-gray-400 text-center py-10">Sin solicitudes</p>}
             {filtered.map(r=>(
@@ -216,21 +302,21 @@ export default function VacacionesAdmin({ employees, adminId, showToast }) {
                       <p className="text-sm font-bold text-gray-900">{r.profiles?.name}</p>
                       {statusBadge(r.status)}
                     </div>
-                    <p className="text-sm text-gray-600">
-                      🏖️ <span className="font-bold">{r.days} días</span> · {fmtDateShort(r.start_date)} → {fmtDateShort(r.end_date)}
-                    </p>
+                    <p className="text-sm text-gray-600">🏖️ <span className="font-bold">{r.days} días</span> · {fmtDateShort(r.start_date)} → {fmtDateShort(r.end_date)}</p>
                     {r.reason&&<p className="text-xs text-gray-400 italic mt-0.5">"{r.reason}"</p>}
                     {r.admin_note&&<p className="text-xs text-sky-600 mt-1">Nota: "{r.admin_note}"</p>}
-                    <p className="text-xs text-gray-300 mt-1">
-                      {new Date(r.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})}
-                    </p>
                   </div>
-                  {r.status==='pending'&&(
-                    <button onClick={()=>setReviewReq(r)}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-sky-50 text-sky-700 hover:bg-sky-100 flex-shrink-0">
-                      Revisar
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={()=>setEditReq(r)} className="p-2 text-gray-300 hover:text-sky-500 hover:bg-sky-50 rounded-xl" title="Editar fechas">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                     </button>
-                  )}
+                    {r.status==='pending'&&(
+                      <button onClick={()=>setReviewReq(r)}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-50 text-sky-700 hover:bg-sky-100">
+                        Revisar
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -238,14 +324,17 @@ export default function VacacionesAdmin({ employees, adminId, showToast }) {
         </div>
       )}
 
-      {/* EMPLOYEES TAB */}
+      {/* EMPLOYEES */}
       {tabV==='employees'&&(
         <div className="space-y-3">
-          <p className="text-xs text-gray-400">Hacé clic en un empleado para ver y editar su saldo de vacaciones.</p>
+          <p className="text-xs text-gray-400">Tocá un empleado para ver su historial y editar el saldo.</p>
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 divide-y divide-gray-50">
             {employees.map(emp=>{
-              const vacDays  = calcVacationDays(emp.hire_date);
-              const seniority= calcSeniority(emp.hire_date);
+              const vacDays = calcVacationDays(emp.hire_date);
+              const seniority = calcSeniority(emp.hire_date);
+              const empReqs = requests.filter(r=>r.employee_id===emp.id&&r.status==='approved');
+              const taken = empReqs.filter(r=>r.end_date<=new Date().toISOString().split('T')[0]).reduce((a,r)=>a+r.days,0);
+              const pending = empReqs.filter(r=>r.end_date>new Date().toISOString().split('T')[0]).reduce((a,r)=>a+r.days,0);
               return (
                 <div key={emp.id} className="px-5 py-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={()=>setBalEmp(emp)}>
@@ -254,22 +343,20 @@ export default function VacacionesAdmin({ employees, adminId, showToast }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-gray-900">{emp.name}</p>
-                    <p className="text-xs text-gray-400">
-                      {emp.hire_date ? `Alta: ${fmtDate(emp.hire_date)} · ${seniority.label}` : 'Sin fecha de alta'}
-                    </p>
+                    <p className="text-xs text-gray-400">{emp.hire_date?seniority.label:'Sin fecha de alta'}</p>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    {emp.hire_date ? (
+                  <div className="text-right flex-shrink-0 space-y-0.5">
+                    {emp.hire_date?(
                       <>
                         <p className="text-sm font-black text-sky-600">{vacDays} días</p>
-                        <p className="text-xs text-gray-400">este año</p>
+                        {taken>0&&<p className="text-xs text-gray-400">{taken} tomados · {pending>0?`${pending} pend.`:''}</p>}
                       </>
-                    ) : (
-                      <Badge color="orange">Sin alta</Badge>
+                    ):(
+                      <span className="text-xs text-amber-500 font-semibold">Sin alta</span>
                     )}
                   </div>
                   <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
                   </svg>
                 </div>
               );
@@ -279,7 +366,8 @@ export default function VacacionesAdmin({ employees, adminId, showToast }) {
       )}
 
       {reviewReq && <ReviewModal req={reviewReq} onReview={handleReview} onClose={()=>setReviewReq(null)}/>}
-      {balEmp && <BalanceModal emp={balEmp} onClose={()=>setBalEmp(null)} onSave={handleSaveBalance}/>}
+      {editReq   && <EditRequestModal req={editReq} onSave={handleEdit} onClose={()=>setEditReq(null)}/>}
+      {balEmp    && <BalanceModal emp={balEmp} requests={requests} onClose={()=>setBalEmp(null)} onSave={handleSaveBalance} onSyncBalance={load}/>}
     </div>
   );
 }
