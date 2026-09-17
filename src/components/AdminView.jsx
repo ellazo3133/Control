@@ -7,6 +7,7 @@ import EmployeeProfileModal from './EmployeeProfileModal';
 import ExportButton from './ExportButton';
 import NotificationBell from './NotificationBell';
 import MonthCalendar from './MonthCalendar';
+import AuditHistory from './AuditHistory';
 import VacacionesAdmin from './VacacionesAdmin';
 import TareasAdmin from './TareasAdmin';
 import LicenciasAdmin from './LicenciasAdmin';
@@ -289,6 +290,7 @@ export default function AdminView({profile,onLogout}){
   const [todayRecs,setTodayRecs]=useState([]);
   const [filteredRecs,setFilteredRecs]=useState([]);
   const [monthRecs,setMonthRecs]=useState([]);
+  const [prevMonthRecs,setPrevMonthRecs]=useState([]);
   const [holidays,setHolidays]=useState([]);
   const [hq,setHq]=useState(null);
   const [toast,setToast]=useState(null);
@@ -302,6 +304,7 @@ export default function AdminView({profile,onLogout}){
   const [holForm,setHolForm]=useState({date:'',name:''});
 
   const [editRec,setEditRec]=useState(null);
+  const [auditRecId,setAuditRecId]=useState(null);
   const [showAddEmp,setShowAddEmp]=useState(false);
   const [showAddHol,setShowAddHol]=useState(false);
   const [editHol,setEditHol]=useState(null);
@@ -351,6 +354,11 @@ export default function AdminView({profile,onLogout}){
 
   useEffect(()=>{
     getRecordsByMonth(analysisMonth).then(setMonthRecs).catch(()=>{});
+    // Load previous month for trend comparison
+    const [y,m]=analysisMonth.split('-').map(Number);
+    const prevDate=new Date(y,m-2,1);
+    const prevMonth=prevDate.toISOString().slice(0,7);
+    getRecordsByMonth(prevMonth).then(setPrevMonthRecs).catch(()=>{});
     // Load extra hours for month
     supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',analysisMonth+'-01').lte('date',analysisMonth+'-31')
       .then(({data})=>setExtraHoursList(data||[])).catch(()=>{});
@@ -570,6 +578,25 @@ export default function AdminView({profile,onLogout}){
     };
   };
 
+  // Stats for previous month (for trend)
+  const getPrevStats=empId=>{
+    const sched=empSchedMap[empId]||{};
+    const [y,m]=analysisMonth.split('-').map(Number);
+    const prevDate=new Date(y,m-2,1);
+    const prevMonth=prevDate.toISOString().slice(0,7);
+    const days=new Date(prevDate.getFullYear(),prevDate.getMonth()+1,0).getDate();
+    let scheduled=0,present=0;
+    for(let d=1;d<=days;d++){
+      const date=`${prevMonth}-${String(d).padStart(2,'0')}`;
+      const dow=new Date(date+'T12:00:00').getDay();
+      if(!sched[dow]?.active)continue;
+      scheduled++;
+      const rec=prevMonthRecs.find(r=>r.employee_id===empId&&r.date===date);
+      if(rec?.check_in) present++;
+    }
+    return{scheduled,present,pct:scheduled>0?Math.round(present/scheduled*100):0};
+  };
+
   const TABS=[
     ['dashboard','Panel','M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'],
     ['employees','Empleados','M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z'],
@@ -750,9 +777,14 @@ export default function AdminView({profile,onLogout}){
                         {rec.status==='absent'&&<Badge color="red">Ausente</Badge>}
                         {rec.status==='justified'&&<Badge color="yellow">Justificada</Badge>}
                         {rec.status==='holiday'&&<Badge color="purple">Feriado</Badge>}
-                        <button onClick={()=>setEditRec(rec)} className="p-2 text-gray-300 hover:text-sky-500 hover:bg-sky-50 rounded-xl transition-colors">
+                        <button onClick={()=>setEditRec(rec)} className="p-2 text-gray-300 hover:text-sky-500 hover:bg-sky-50 rounded-xl transition-colors" title="Editar">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         </button>
+                        {rec.edited_by&&(
+                          <button onClick={()=>setAuditRecId(rec.id)} className="p-2 text-gray-300 hover:text-violet-500 hover:bg-violet-50 rounded-xl transition-colors" title="Ver historial de cambios">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -899,6 +931,42 @@ export default function AdminView({profile,onLogout}){
               />
             )}
 
+            {analysisEmp==='all'&&(()=>{
+              const allCurrent=employees.map(e=>getStats(e.id));
+              const allPrev=employees.map(e=>getPrevStats(e.id));
+              const avgCurrent=allCurrent.length?Math.round(allCurrent.reduce((a,s)=>a+s.pct,0)/allCurrent.length):0;
+              const avgPrev=allPrev.filter(p=>p.scheduled>0).length?Math.round(allPrev.filter(p=>p.scheduled>0).reduce((a,p)=>a+p.pct,0)/allPrev.filter(p=>p.scheduled>0).length):null;
+              const totalPresent=allCurrent.reduce((a,s)=>a+s.present,0);
+              const totalAbsent=allCurrent.reduce((a,s)=>a+s.absent,0);
+              const totalLate=allCurrent.reduce((a,s)=>a+s.lateCount,0);
+              const diff=avgPrev!==null?avgCurrent-avgPrev:null;
+              return(
+                <div className="bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-100 rounded-3xl p-5 mb-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold text-sky-600 uppercase tracking-wide">Resumen general del mes</p>
+                    {diff!==null&&(
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-xl ${diff>0?'bg-emerald-100 text-emerald-700':diff<0?'bg-red-100 text-red-600':'bg-gray-100 text-gray-500'}`}>
+                        {diff>0?'↑':diff<0?'↓':'='} {diff!==0?`${Math.abs(diff)}pp`:'igual'} vs mes anterior
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 text-center">
+                    {[
+                      {l:'Asist. promedio',v:`${avgCurrent}%`,c:'text-sky-700 text-xl'},
+                      {l:'Presentes',v:totalPresent,c:'text-emerald-600 text-xl'},
+                      {l:'Ausentes',v:totalAbsent,c:'text-red-500 text-xl'},
+                      {l:'Tardanzas',v:totalLate,c:'text-amber-600 text-xl'},
+                    ].map(({l,v,c})=>(
+                      <div key={l} className="bg-white/70 rounded-2xl p-2.5">
+                        <p className={`font-black ${c}`}>{v}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{l}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="grid gap-4 md:grid-cols-2">
               {employees.filter(e=>analysisEmp==='all'||e.id===analysisEmp).map(emp=>{const s=getStats(emp.id);
                 const pC=s.pct>=90?'text-emerald-600':s.pct>=75?'text-amber-600':'text-red-500';
@@ -912,7 +980,14 @@ export default function AdminView({profile,onLogout}){
                       <div className="flex items-center gap-3"><Avatar initials={emp.avatar}/>
                         <div><p className="font-bold text-gray-900 text-sm">{emp.name}</p><p className="text-xs text-gray-400">{s.scheduled} días prog.</p></div>
                       </div>
-                      <div className="text-right"><p className={`text-3xl font-black ${pC}`}>{s.pct}%</p><p className="text-xs text-gray-400">asistencia</p></div>
+                      <div className="text-right">
+                        <p className={`text-3xl font-black ${pC}`}>{s.pct}%</p>
+                        {(()=>{const prev=getPrevStats(emp.id);const diff=s.pct-prev.pct;const hasPrev=prev.scheduled>0;
+                          if(!hasPrev)return<p className="text-xs text-gray-300">primer mes</p>;
+                          if(diff===0)return<p className="text-xs text-gray-400">= igual que mes ant.</p>;
+                          return<p className={`text-xs font-bold ${diff>0?'text-emerald-500':'text-red-400'}`}>{diff>0?'↑':'↓'}{Math.abs(diff)}pp vs mes ant.</p>;
+                        })()}
+                      </div>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden">
                       <div className={`h-full rounded-full bg-gradient-to-r ${bC}`} style={{width:`${s.pct}%`}}/>
@@ -1070,6 +1145,7 @@ export default function AdminView({profile,onLogout}){
         </Modal>
       )}
       {editRec&&<EditRecModal rec={editRec} onSave={handleSaveRec} onClose={()=>setEditRec(null)} adminId={profile.id}/>}
+      {auditRecId&&<AuditHistory recordId={auditRecId} onClose={()=>setAuditRecId(null)}/>}
       {showExtraHours&&<ExtraHoursModal employees={employees} onClose={()=>setShowExtraHours(false)} onSave={handleSaveExtra}/>}
       {payrollEmp&&(
         <PayrollModal emp={payrollEmp} month={analysisMonth} stats={getStats(payrollEmp.id)}
