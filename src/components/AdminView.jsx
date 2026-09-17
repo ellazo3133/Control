@@ -302,6 +302,7 @@ export default function AdminView({profile,onLogout}){
   const [editRec,setEditRec]=useState(null);
   const [showAddEmp,setShowAddEmp]=useState(false);
   const [showAddHol,setShowAddHol]=useState(false);
+  const [editHol,setEditHol]=useState(null);
   const [showExtraHours,setShowExtraHours]=useState(false);
   const [editEmpId,setEditEmpId]=useState(null);
   const [editEmpSched,setEditEmpSched]=useState({});
