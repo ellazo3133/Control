@@ -422,11 +422,18 @@ function NewRecordModal({employees,defaultDate,onSave,onClose}){
 
 // ─── PAYROLL MODAL ────────────────────────────────────────────────────────────// ─── EXTRA HOURS MODAL ────────────────────────────────────────────────────────
 
-function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
+function PayrollModal({emp,month,stats,extraHours,empSchedMap,onClose,onSave}){
   const baseSalary=emp.salary||0;
   const deductPct=stats.scheduled>0?Math.round((stats.absent/stats.scheduled)*100):0;
   const deductAmt=Math.round(baseSalary*(deductPct/100));
-  const hourlyRate = emp.extra_hour_rate || (baseSalary/((stats.scheduled||20)*8));
+  // Use actual scheduled days from schedMap if available
+  const schedDays=(()=>{
+    if(!empSchedMap||!emp?.id)return stats.scheduled||20;
+    const s=empSchedMap[emp.id]||{};
+    const active=Object.values(s).filter(x=>x?.active).length;
+    return active||stats.scheduled||20;
+  })();
+  const hourlyRate = emp.extra_hour_rate || (baseSalary/(schedDays*8));
   const extraHrsTotal=extraHours.reduce((acc,h)=>{
     const rate=h.hourly_rate||hourlyRate;
     return acc+(h.hours*rate*(h.multiplier||1));
@@ -858,7 +865,11 @@ export default function AdminView({profile,onLogout}){
     getRecordsByMonth(prevMonth).then(setPrevMonthRecs).catch(()=>{});
     // Load extra hours for month
     supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',monthStart).lte('date',monthEnd)
-      .then(({data})=>setExtraHoursList(data||[])).catch(()=>{});
+      .order('date',{ascending:false})
+      .then(({data})=>{
+        setExtraHoursList(data||[]);
+        setExtraHistoryLoaded(false); // mark history as stale when month changes
+      }).catch(()=>{});
     // Load payrolls
     supabase.from('payroll').select('*').eq('month',analysisMonth)
       .then(({data})=>setPayrolls(data||[])).catch(()=>{});
@@ -997,6 +1008,21 @@ export default function AdminView({profile,onLogout}){
   };
 
   // Extra hours
+  const loadExtraHours=async(month)=>{
+    const[y,m]=(month||analysisMonth).split('-').map(Number);
+    const start=`${month||analysisMonth}-01`;
+    const end=`${month||analysisMonth}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+    const{data}=await supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',start).lte('date',end).order('date',{ascending:false});
+    setExtraHoursList(data||[]);
+    setExtraHistoryAll(prev=>{
+      // Merge: replace records of this month, keep others
+      const others=prev.filter(h=>!h.date.startsWith(month||analysisMonth));
+      return [...(data||[]),...others].sort((a,b)=>b.date.localeCompare(a.date));
+    });
+    setExtraHistoryLoaded(true);
+    return data||[];
+  };
+
   const handleSaveExtra=async({id,empId,date,hours,description,multiplier,hourly_rate})=>{
     if(id){
       // Update existing
@@ -1007,11 +1033,10 @@ export default function AdminView({profile,onLogout}){
       const{error}=await supabase.from('extra_hours').insert({employee_id:empId,date,hours,description,multiplier,hourly_rate,approved_by:profile.id});
       if(error)throw error;
     }
-    const[yx,mx]=analysisMonth.split('-').map(Number);
-    const mEnd=`${analysisMonth}-${String(new Date(yx,mx,0).getDate()).padStart(2,'0')}`;
-    const{data}=await supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',analysisMonth+'-01').lte('date',mEnd);
-    setExtraHoursList(data||[]);
-    setExtraHistoryLoaded(false);
+    // Reload the month of the saved record (might differ from analysisMonth)
+    const recordMonth=date.slice(0,7);
+    await loadExtraHours(recordMonth);
+    if(recordMonth!==analysisMonth) await loadExtraHours(analysisMonth);
     setEditExtraData(null);
     showToast(id?'Registro actualizado':'Horas extra guardadas');
   };
@@ -1657,7 +1682,13 @@ export default function AdminView({profile,onLogout}){
           if(!extraHistoryLoaded){
             supabase.from('extra_hours').select('*,profiles(name,avatar)')
               .order('date',{ascending:false}).limit(500)
-              .then(({data})=>{setExtraHistoryAll(data||[]);setExtraHistoryLoaded(true);});
+              .then(({data})=>{
+                setExtraHistoryAll(data||[]);
+                // Also sync extraHoursList with current month data
+                const monthData=(data||[]).filter(h=>h.date.startsWith(analysisMonth));
+                if(monthData.length>0) setExtraHoursList(monthData);
+                setExtraHistoryLoaded(true);
+              });
           }
           const fmtM=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
           const now=new Date();
@@ -1791,8 +1822,9 @@ export default function AdminView({profile,onLogout}){
                                   <button onClick={async()=>{
                                     if(!window.confirm('¿Eliminar este registro?'))return;
                                     await supabase.from('extra_hours').delete().eq('id',h.id);
-                                    setExtraHistoryLoaded(false);
+                                    setExtraHistoryAll(p=>p.filter(x=>x.id!==h.id));
                                     setExtraHoursList(p=>p.filter(x=>x.id!==h.id));
+                                    setExtraHistoryLoaded(false);
                                     showToast('Registro eliminado');
                                   }} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -2012,6 +2044,7 @@ export default function AdminView({profile,onLogout}){
       {payrollEmp&&(
         <PayrollModal emp={payrollEmp} month={analysisMonth} stats={getStats(payrollEmp.id)}
           extraHours={extraHoursList.filter(h=>h.employee_id===payrollEmp.id)}
+          empSchedMap={empSchedMap}
           onClose={()=>setPayrollEmp(null)} onSave={handleSavePayroll}/>
       )}
       {editHol&&(
