@@ -141,6 +141,122 @@ export default function ExportButton({ employees, records, schedMap, month, extr
     setExporting(false); setOpen(false);
   };
 
+  const exportLiquidacionesPDF = () => {
+    setExporting(true);
+    const [y,m] = month.split('-').map(Number);
+    const MONTHS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const monthLabel=`${MONTHS[m-1]} ${y}`;
+    const today=new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'});
+
+    let empRows='';
+    let totalBruto=0, totalDescuentos=0, totalNeto=0;
+
+    employees.forEach(emp=>{
+      const s=getStats(emp.id);
+      const empExtras=(extraHours||[]).filter(h=>h.employee_id===emp.id);
+      const baseSalary=emp.salary||0;
+      const deductPct=s.scheduled>0?Math.round((s.absent/s.scheduled)*100):0;
+      const deductAmt=Math.round(baseSalary*(deductPct/100));
+      const extraAmt=empExtras.reduce((a,h)=>a+Math.round(h.hours*(baseSalary/((s.scheduled||20)*8))*h.multiplier),0);
+      const prl=payrolls?.find(p=>p.employee_id===emp.id);
+      const net=prl?.total_net||Math.round(baseSalary-deductAmt+extraAmt);
+      const netDebt=Math.max(0,(s.totalMissingMins||0)-(s.totalExtraMins||0));
+      const mH=m=>`${Math.floor(m/60)}h ${m%60}m`;
+      totalBruto+=baseSalary;totalDescuentos+=deductAmt;totalNeto+=net;
+      empRows+=`<tr>
+        <td><strong>${emp.name}</strong></td>
+        <td style="text-align:center">${s.scheduled}</td>
+        <td style="text-align:center;color:#059669">${s.present}</td>
+        <td style="text-align:center;color:#dc2626">${s.absent}</td>
+        <td style="text-align:right">$${baseSalary.toLocaleString('es-AR')}</td>
+        <td style="text-align:right;color:#dc2626">${deductAmt>0?`-$${deductAmt.toLocaleString('es-AR')}`:'—'}</td>
+        <td style="text-align:right;color:#059669">${extraAmt>0?`+$${extraAmt.toLocaleString('es-AR')}`:'—'}</td>
+        <td style="text-align:right;font-weight:900;color:#0ea5e9">$${net.toLocaleString('es-AR')}</td>
+        <td style="text-align:center;color:${netDebt>0?'#d97706':'#059669'};font-size:.75rem">${netDebt>0?mH(netDebt):'✓'}</td>
+      </tr>`;
+    });
+
+    const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"/>
+<title>Liquidación General — ${monthLabel}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,sans-serif;color:#1f2937;padding:2rem;font-size:12px;}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0ea5e9;padding-bottom:1rem;margin-bottom:1.5rem;}
+.org{font-size:1.1rem;font-weight:900;color:#0ea5e9;}
+.org-sub{font-size:.7rem;color:#6b7280;margin-top:.2rem;}
+.title h1{font-size:1rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em;text-align:right;}
+.title p{font-size:.7rem;color:#6b7280;text-align:right;margin-top:.2rem;}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem;}
+.stat{background:#f8fafc;border-radius:8px;padding:.75rem;text-align:center;}
+.stat-val{font-size:1.25rem;font-weight:900;}
+.stat-label{font-size:.65rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-top:.15rem;}
+table{width:100%;border-collapse:collapse;}
+th{background:#f1f5f9;padding:.5rem .6rem;text-align:left;font-weight:700;color:#374151;border-bottom:2px solid #e2e8f0;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;}
+td{padding:.5rem .6rem;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+.tfoot td{background:#f1f5f9;font-weight:900;border-top:2px solid #e2e8f0;}
+.total-box{background:linear-gradient(135deg,#0ea5e9,#6366f1);color:white;border-radius:8px;padding:1rem 1.25rem;display:flex;justify-content:space-between;align-items:center;margin-top:1.5rem;}
+.total-box .lbl{font-size:.75rem;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.05em;}
+.total-box .val{font-size:1.4rem;font-weight:900;}
+.footer{margin-top:1.5rem;padding-top:.75rem;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:.65rem;color:#9ca3af;}
+.sign-area{display:grid;grid-template-columns:1fr 1fr;gap:3rem;margin-top:3rem;}
+.sign-line{border-top:1px solid #d1d5db;padding-top:.4rem;font-size:.7rem;color:#6b7280;text-align:center;}
+.print-btn{background:#0ea5e9;color:white;border:none;padding:.6rem 1.25rem;border-radius:.6rem;font-weight:700;cursor:pointer;margin-bottom:1.25rem;font-size:.85rem;}
+@media print{.print-btn{display:none;}}
+</style></head><body>
+<button class="print-btn" onclick="window.print()">🖨️ Imprimir</button>
+<div class="header">
+  <div><div class="org">El Lazo Juventud Judía</div><div class="org-sub">ellazo.com.ar · info@ellazo.com.ar</div></div>
+  <div class="title"><h1>Resumen de Liquidación General</h1><p>${monthLabel} · Generado el ${today}</p></div>
+</div>
+
+<div class="summary">
+  <div class="stat"><div class="stat-val" style="color:#6366f1">${employees.length}</div><div class="stat-label">Empleados</div></div>
+  <div class="stat"><div class="stat-val" style="color:#1f2937">$${totalBruto.toLocaleString('es-AR')}</div><div class="stat-label">Total bruto</div></div>
+  <div class="stat"><div class="stat-val" style="color:#dc2626">-$${totalDescuentos.toLocaleString('es-AR')}</div><div class="stat-label">Descuentos</div></div>
+  <div class="stat"><div class="stat-val" style="color:#0ea5e9">$${totalNeto.toLocaleString('es-AR')}</div><div class="stat-label">Total neto</div></div>
+</div>
+
+<table>
+  <thead><tr>
+    <th>Empleado</th><th style="text-align:center">Días prog.</th><th style="text-align:center">Presentes</th>
+    <th style="text-align:center">Ausentes</th><th style="text-align:right">Sueldo base</th>
+    <th style="text-align:right">Descuento</th><th style="text-align:right">Extras</th>
+    <th style="text-align:right">Total neto</th><th style="text-align:center">Hs debidas</th>
+  </tr></thead>
+  <tbody>${empRows}</tbody>
+  <tfoot><tr>
+    <td><strong>TOTALES</strong></td><td></td><td></td><td></td>
+    <td style="text-align:right">$${totalBruto.toLocaleString('es-AR')}</td>
+    <td style="text-align:right;color:#dc2626">-$${totalDescuentos.toLocaleString('es-AR')}</td>
+    <td></td>
+    <td style="text-align:right;color:#0ea5e9">$${totalNeto.toLocaleString('es-AR')}</td>
+    <td></td>
+  </tr></tfoot>
+</table>
+
+<div class="total-box">
+  <span class="lbl">Total a pagar ${monthLabel}</span>
+  <span class="val">$${totalNeto.toLocaleString('es-AR')}</span>
+</div>
+
+<div class="sign-area">
+  <div class="sign-line">Firma Director — El Lazo</div>
+  <div class="sign-line">Sello y firma contador</div>
+</div>
+
+<div class="footer">
+  <span>Liquidación General — ${monthLabel} · Sistema de Control de Asistencia El Lazo</span>
+  <span>Documento informativo interno</span>
+</div>
+</body></html>`;
+
+    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    window.open(url,'_blank');
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+    setExporting(false);setOpen(false);
+  };
+
   return (
     <div className="relative">
       <button onClick={()=>setOpen(o=>!o)} disabled={exporting}
@@ -158,7 +274,8 @@ export default function ExportButton({ employees, records, schedMap, month, extr
             {[
               ['📊 CSV Asistencia', exportCSV, 'Para Excel/Sheets'],
               ['💰 CSV Liquidación', exportLiquidaciones, 'Resumen de sueldos'],
-              ['📄 Reporte PDF', exportHTML, 'Imprimible, abre nueva pestaña'],
+              ['📄 Reporte asistencia PDF', exportHTML, 'Detalle día a día por empleado'],
+              ['💼 Liquidación general PDF', exportLiquidacionesPDF, 'Resumen de sueldos imprimible'],
             ].map(([label, fn, sub])=>(
               <button key={label} onClick={fn}
                 className="w-full px-4 py-3.5 text-left hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0">

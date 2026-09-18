@@ -227,7 +227,15 @@ function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
   const [bonus,setBonus]=useState('0');
   const [notes,setNotes]=useState('');
   const [saving,setSaving]=useState(false);
-  const totalNet=baseSalary-deductAmt+Math.round(extraHrsTotal)+parseFloat(bonus||0);
+  // Toggle descuento por minutos debidos
+  const netDebt=Math.max(0,(stats.totalMissingMins||0)-(stats.totalExtraMins||0));
+  const salaryPerMin=baseSalary/((stats.scheduled||20)*8*60);
+  const minsDeductAmt=Math.round(netDebt*salaryPerMin);
+  const [deductMins,setDeductMins]=useState(false);
+  const mH=m=>`${Math.floor(m/60)}h ${m%60}m`;
+  const minsDeduct=deductMins?minsDeductAmt:0;
+  const totalNet=baseSalary-deductAmt-minsDeduct+Math.round(extraHrsTotal)+parseFloat(bonus||0);
+
   const doSave=async()=>{
     setSaving(true);
     await onSave({
@@ -236,9 +244,101 @@ function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
       days_absent:stats.absent, days_justified:stats.justified,
       deduction_pct:deductPct, deduction_amt:deductAmt,
       extra_hours_amt:Math.round(extraHrsTotal), bonus:parseFloat(bonus||0),
-      total_net:Math.round(totalNet), notes, status:'approved'
+      total_net:Math.round(totalNet), notes, status:'approved',
+      mins_debt:netDebt, mins_deduct_applied:deductMins, mins_deduct_amt:minsDeduct,
     });
     setSaving(false);onClose();
+  };
+
+  const printRecibo=()=>{
+    const MONTHS=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const [y,m]=month.split('-').map(Number);
+    const monthLabel=`${MONTHS[m-1]} ${y}`;
+    const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"/>
+<title>Recibo — ${emp.name} — ${monthLabel}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:Arial,sans-serif;color:#1f2937;padding:2.5rem;max-width:720px;margin:0 auto;font-size:13px;}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0ea5e9;padding-bottom:1.25rem;margin-bottom:1.5rem;}
+.org{font-size:1.1rem;font-weight:900;color:#0ea5e9;}
+.org-sub{font-size:.75rem;color:#6b7280;margin-top:.2rem;}
+.title{text-align:right;}
+.title h1{font-size:1rem;font-weight:900;color:#1f2937;text-transform:uppercase;letter-spacing:.05em;}
+.title p{font-size:.75rem;color:#6b7280;margin-top:.2rem;}
+.emp-box{background:#f8fafc;border-radius:8px;padding:1rem 1.25rem;margin-bottom:1.5rem;display:grid;grid-template-columns:1fr 1fr;gap:.5rem .75rem;}
+.emp-box .label{font-size:.7rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;}
+.emp-box .value{font-size:.85rem;font-weight:700;color:#1f2937;}
+.section{margin-bottom:1.25rem;}
+.section-title{font-size:.7rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:1px solid #e5e7eb;}
+.row{display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid #f3f4f6;font-size:.82rem;}
+.row:last-child{border-bottom:none;}
+.row .lbl{color:#4b5563;}
+.row .val{font-weight:700;}
+.red{color:#dc2626;} .green{color:#059669;} .amber{color:#d97706;} .sky{color:#0ea5e9;}
+.total-box{background:linear-gradient(135deg,#0ea5e9,#6366f1);border-radius:8px;padding:1rem 1.25rem;display:flex;justify-content:space-between;align-items:center;color:white;margin-top:1.5rem;}
+.total-box .lbl{font-size:.75rem;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.05em;}
+.total-box .val{font-size:1.5rem;font-weight:900;}
+.notes-box{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-top:1rem;font-size:.8rem;color:#92400e;}
+.footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:.7rem;color:#9ca3af;}
+.sign-area{margin-top:3rem;display:grid;grid-template-columns:1fr 1fr;gap:2rem;}
+.sign-line{border-top:1px solid #d1d5db;padding-top:.4rem;font-size:.7rem;color:#6b7280;text-align:center;}
+@media print{body{padding:1rem;} .no-print{display:none;}}
+</style></head><body>
+<div class="header">
+  <div><div class="org">El Lazo Juventud Judía</div><div class="org-sub">ellazo.com.ar · info@ellazo.com.ar</div></div>
+  <div class="title"><h1>Recibo de Haberes</h1><p>${monthLabel} · Generado el ${new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'})}</p></div>
+</div>
+
+<div class="emp-box">
+  <div><div class="label">Empleado</div><div class="value">${emp.name}</div></div>
+  <div><div class="label">Período</div><div class="value">${monthLabel}</div></div>
+  <div><div class="label">Días programados</div><div class="value">${stats.scheduled}</div></div>
+  <div><div class="label">Días trabajados</div><div class="value">${stats.present}</div></div>
+  <div><div class="label">Ausencias injustificadas</div><div class="value">${stats.absent}</div></div>
+  <div><div class="label">Justificadas / Vacaciones</div><div class="value">${stats.justified}</div></div>
+</div>
+
+<div class="section">
+  <div class="section-title">Haberes</div>
+  <div class="row"><span class="lbl">Sueldo básico</span><span class="val sky">$${baseSalary.toLocaleString('es-AR')}</span></div>
+  ${extraHours.length>0?extraHours.map(h=>`<div class="row"><span class="lbl">Hrs extra/remoto — ${h.date} (${h.hours}hs x${h.multiplier})</span><span class="val green">+$${Math.round(h.hours*baseSalary/((stats.scheduled||20)*8)*h.multiplier).toLocaleString('es-AR')}</span></div>`).join(''):''}
+  ${parseFloat(bonus||0)>0?`<div class="row"><span class="lbl">Bonus / adicional</span><span class="val green">+$${parseFloat(bonus||0).toLocaleString('es-AR')}</span></div>`:''}
+</div>
+
+<div class="section">
+  <div class="section-title">Descuentos</div>
+  ${deductAmt>0?`<div class="row"><span class="lbl">Por ausencias (${deductPct}% — ${stats.absent} día${stats.absent!==1?'s':''})</span><span class="val red">-$${deductAmt.toLocaleString('es-AR')}</span></div>`:'<div class="row"><span class="lbl">Sin descuentos por faltas</span><span class="val green">✓</span></div>'}
+  ${deductMins&&minsDeductAmt>0?`<div class="row"><span class="lbl">Por minutos debidos (${mH(netDebt)})</span><span class="val red">-$${minsDeductAmt.toLocaleString('es-AR')}</span></div>`:netDebt>0?`<div class="row"><span class="lbl">Minutos debidos (${mH(netDebt)}) — sin descuento aplicado</span><span class="val amber">⚠ ${mH(netDebt)} pendientes</span></div>`:''}
+</div>
+
+${netDebt>0?`<div class="section">
+  <div class="section-title">Balance de horas</div>
+  <div class="row"><span class="lbl">Minutos debidos (tardanzas sin recuperar)</span><span class="val amber">-${mH(netDebt)}</span></div>
+  ${(stats.totalExtraMins||0)>0?`<div class="row"><span class="lbl">Minutos extra trabajados</span><span class="val green">+${mH(stats.totalExtraMins||0)}</span></div>`:''}
+  <div class="row"><span class="lbl">Descuento aplicado</span><span class="val ${deductMins?'red':'green'}">${deductMins?`-$${minsDeductAmt.toLocaleString('es-AR')}`:'No aplicado por decisión del empleador'}</span></div>
+</div>`:''}
+
+<div class="total-box">
+  <span class="lbl">Total neto a cobrar</span>
+  <span class="val">$${Math.round(totalNet).toLocaleString('es-AR')}</span>
+</div>
+
+${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
+
+<div class="sign-area">
+  <div class="sign-line">Firma empleado — ${emp.name}</div>
+  <div class="sign-line">Firma empleador — El Lazo</div>
+</div>
+
+<div class="footer">
+  <span>Recibo generado por Sistema de Control de Asistencia — El Lazo</span>
+  <span>Aclaración: este documento es informativo</span>
+</div>
+</body></html>`;
+    const w=window.open('','_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(()=>w.print(),500);
   };
   return(
     <Modal open={true} onClose={onClose} title={`Liquidación — ${emp.name}`}>
@@ -253,20 +353,37 @@ function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
         <div className="bg-red-50 rounded-2xl p-4 space-y-1 text-sm">
           <div className="flex justify-between"><span className="text-red-600">Descuento por faltas ({deductPct}%)</span><span className="font-bold text-red-600">-{fmtMoney(deductAmt)}</span></div>
         </div>
-        {(stats.totalMissingMins>0||stats.totalExtraMins>0)&&(()=>{
-          const netDebt=stats.totalMissingMins-stats.totalExtraMins;
-          const mH=m=>`${Math.floor(Math.abs(m)/60)}h ${Math.abs(m)%60}m`;
+        {/* Balance de minutos + toggle descuento */}
+        {(()=>{
           const isOk=netDebt<=0;
           return(
-            <div className={`rounded-2xl p-4 space-y-1 text-sm border ${isOk?'bg-emerald-50 border-emerald-100':'bg-amber-50 border-amber-100'}`}>
-              <p className={`font-bold mb-2 ${isOk?'text-emerald-700':'text-amber-700'}`}>Balance de minutos del mes</p>
-              {stats.totalMissingMins>0&&<div className="flex justify-between text-xs"><span className="text-amber-600">Minutos debidos (tardanzas/salidas tempranas)</span><span className="font-bold text-amber-700">-{mH(stats.totalMissingMins)}</span></div>}
-              {stats.totalExtraMins>0&&<div className="flex justify-between text-xs"><span className="text-emerald-600">Minutos extra trabajados</span><span className="font-bold text-emerald-700">+{mH(stats.totalExtraMins)}</span></div>}
-              <div className={`flex justify-between text-xs font-bold pt-1 border-t ${isOk?'border-emerald-200 text-emerald-700':'border-amber-200 text-amber-700'}`}>
-                <span>Balance neto</span>
-                <span>{isOk?`✅ Recuperado (${netDebt<0?'+'+mH(Math.abs(netDebt)):'0'})`:`⚠️ Debe ${mH(netDebt)}`}</span>
+            <div className={`rounded-2xl p-4 space-y-2 text-sm border ${isOk?'bg-emerald-50 border-emerald-100':deductMins?'bg-red-50 border-red-100':'bg-amber-50 border-amber-100'}`}>
+              <div className="flex items-center justify-between">
+                <p className={`font-bold text-sm ${isOk?'text-emerald-700':deductMins?'text-red-700':'text-amber-700'}`}>⏱ Balance de horas</p>
+                {isOk&&<span className="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-xl font-bold">✅ Al día</span>}
               </div>
-              {isOk&&<p className="text-xs text-emerald-600 mt-1">Los minutos debidos fueron recuperados — no afecta la liquidación</p>}
+              {(stats.totalMissingMins||0)>0&&<div className="flex justify-between text-xs"><span className="text-gray-500">Minutos debidos</span><span className="font-bold text-amber-700">-{mH(stats.totalMissingMins||0)}</span></div>}
+              {(stats.totalExtraMins||0)>0&&<div className="flex justify-between text-xs"><span className="text-gray-500">Minutos extra</span><span className="font-bold text-emerald-600">+{mH(stats.totalExtraMins||0)}</span></div>}
+              <div className="flex justify-between text-xs font-bold pt-1 border-t border-gray-200">
+                <span className="text-gray-600">Balance neto</span>
+                <span className={isOk?'text-emerald-600':'text-amber-700'}>{isOk?(netDebt<0?`+${mH(Math.abs(netDebt))}`:'0 — recuperado'):`Debe ${mH(netDebt)}`}</span>
+              </div>
+              {!isOk&&(
+                <div className="mt-2 pt-2 border-t border-amber-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-gray-700">Descontar minutos debidos</p>
+                      <p className="text-xs text-gray-400">{mH(netDebt)} → -{fmtMoney(minsDeductAmt)}</p>
+                    </div>
+                    <button onClick={()=>setDeductMins(d=>!d)}
+                      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${deductMins?'bg-red-500':'bg-gray-200'}`}>
+                      <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${deductMins?'translate-x-5':'translate-x-0.5'}`}/>
+                    </button>
+                  </div>
+                  {!deductMins&&<p className="text-xs text-amber-600 mt-1.5">Desactivado — no se descuenta de la liquidación. Quedará anotado en el recibo.</p>}
+                  {deductMins&&<p className="text-xs text-red-600 mt-1.5">Activado — se descontarán {fmtMoney(minsDeductAmt)} del total neto.</p>}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -292,9 +409,16 @@ function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
           <span className="font-bold text-sky-800 text-sm">TOTAL NETO</span>
           <span className="text-2xl font-black text-sky-700">{fmtMoney(Math.round(totalNet))}</span>
         </div>
-        <button onClick={doSave} disabled={saving} className="w-full py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50" style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
-          {saving?'Aprobando...':'Aprobar liquidación'}
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={printRecibo}
+            className="py-3 rounded-2xl text-sm font-bold border-2 border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 flex items-center justify-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            Imprimir recibo
+          </button>
+          <button onClick={doSave} disabled={saving} className="py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50" style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
+            {saving?'Aprobando...':'Aprobar liquidación'}
+          </button>
+        </div>
       </div>
     </Modal>
   );
