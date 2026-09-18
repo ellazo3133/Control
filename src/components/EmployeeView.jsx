@@ -56,8 +56,11 @@ const calcJornada = (record, sched) => {
   const isLate      = rawLate > TOLERANCE_MINUTES;
   const lateMinutes = isLate ? rawLate : 0; // si llegó tarde, recupera TODO lo tarde (no resta tolerancia)
 
-  // Sale a la hora normal + los minutos que llegó tarde (si superó tolerancia)
-  const mustLeaveAt = expectedEnd + lateMinutes;
+  // Si llegó antes del horario, puede salir antes manteniendo las horas completas
+  // Si llegó tarde (con tardanza real), debe salir más tarde para recuperar
+  const mustLeaveAt = actualStart < expectedStart
+    ? actualStart + expectedHours   // llegó temprano → sale cuando complete las horas
+    : expectedEnd + lateMinutes;    // llegó tarde → sale más tarde
 
   let horasExtra = 0, horasFaltantes = 0, workedMinutes = 0;
   if (record.check_out) {
@@ -680,6 +683,81 @@ export default function EmployeeView({profile,onLogout}) {
                   </div>
                 )}
               </div>
+            </div>
+          );
+        })()}
+
+
+        {/* Monthly debt tracker */}
+        {(()=>{
+          const now = new Date();
+          const currentMonth = now.toISOString().slice(0,7);
+          const monthRecs = records.filter(r => r.date.startsWith(currentMonth));
+          if(monthRecs.length === 0) return null;
+
+          // Calcular deuda y extra del mes actual
+          let totalDebtMins = 0;   // minutos que debe (llegó tarde y no los recuperó ese día)
+          let totalExtraMins = 0;  // minutos de más trabajados
+
+          monthRecs.forEach(r => {
+            if(!r.check_in) return;
+            const dow = new Date(r.date+'T12:00:00').getDay();
+            const s = schedule[dow];
+            if(!s?.active) return;
+            const expectedHours = timeToMins(s.end_time) - timeToMins(s.start_time);
+            const worked = r.minutes_worked || 0;
+            const diff = worked - expectedHours;
+            if(diff > 5) totalExtraMins += diff;
+            else if(diff < -5) totalDebtMins += Math.abs(diff);
+          });
+
+          // Deuda neta: si tiene más extra que deuda, está al día
+          const netDebt = totalDebtMins - totalExtraMins;
+          const isOk = netDebt <= 0;
+          const isEven = netDebt === 0 && totalDebtMins === 0;
+
+          const mH = m => `${Math.floor(Math.abs(m)/60)}h ${Math.abs(m)%60}m`;
+
+          return (
+            <div className={`rounded-3xl p-5 border ${isOk?'bg-emerald-50 border-emerald-100':'bg-amber-50 border-amber-100'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-gray-900 text-sm">Balance del mes</h3>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-xl ${isOk?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}`}>
+                  {isOk ? (isEven ? '✅ Al día' : '✅ Recuperado') : `⏳ Debés ${mH(netDebt)}`}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white/70 rounded-2xl p-3">
+                  <p className={`text-lg font-black ${totalDebtMins>0?'text-amber-600':'text-gray-300'}`}>
+                    {totalDebtMins>0?`-${mH(totalDebtMins)}`:'—'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">Horas debidas</p>
+                </div>
+                <div className="bg-white/70 rounded-2xl p-3">
+                  <p className={`text-lg font-black ${totalExtraMins>0?'text-emerald-600':'text-gray-300'}`}>
+                    {totalExtraMins>0?`+${mH(totalExtraMins)}`:'—'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">Horas extra</p>
+                </div>
+                <div className="bg-white/70 rounded-2xl p-3">
+                  <p className={`text-lg font-black ${isOk?'text-emerald-600':'text-amber-700'}`}>
+                    {isOk ? (netDebt<0?`+${mH(Math.abs(netDebt))}`:'0') : `-${mH(netDebt)}`}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">Balance neto</p>
+                </div>
+              </div>
+
+              {!isOk&&(
+                <p className="text-xs text-amber-600 mt-3 text-center">
+                  Si recuperás estas horas antes de fin de mes no se descuentan del sueldo
+                </p>
+              )}
+              {isOk&&totalExtraMins>0&&(
+                <p className="text-xs text-emerald-600 mt-3 text-center">
+                  Tus horas extra compensan cualquier deuda del mes 🎉
+                </p>
+              )}
             </div>
           );
         })()}

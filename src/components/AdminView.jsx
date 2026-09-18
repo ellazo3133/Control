@@ -253,6 +253,23 @@ function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
         <div className="bg-red-50 rounded-2xl p-4 space-y-1 text-sm">
           <div className="flex justify-between"><span className="text-red-600">Descuento por faltas ({deductPct}%)</span><span className="font-bold text-red-600">-{fmtMoney(deductAmt)}</span></div>
         </div>
+        {(stats.totalMissingMins>0||stats.totalExtraMins>0)&&(()=>{
+          const netDebt=stats.totalMissingMins-stats.totalExtraMins;
+          const mH=m=>`${Math.floor(Math.abs(m)/60)}h ${Math.abs(m)%60}m`;
+          const isOk=netDebt<=0;
+          return(
+            <div className={`rounded-2xl p-4 space-y-1 text-sm border ${isOk?'bg-emerald-50 border-emerald-100':'bg-amber-50 border-amber-100'}`}>
+              <p className={`font-bold mb-2 ${isOk?'text-emerald-700':'text-amber-700'}`}>Balance de minutos del mes</p>
+              {stats.totalMissingMins>0&&<div className="flex justify-between text-xs"><span className="text-amber-600">Minutos debidos (tardanzas/salidas tempranas)</span><span className="font-bold text-amber-700">-{mH(stats.totalMissingMins)}</span></div>}
+              {stats.totalExtraMins>0&&<div className="flex justify-between text-xs"><span className="text-emerald-600">Minutos extra trabajados</span><span className="font-bold text-emerald-700">+{mH(stats.totalExtraMins)}</span></div>}
+              <div className={`flex justify-between text-xs font-bold pt-1 border-t ${isOk?'border-emerald-200 text-emerald-700':'border-amber-200 text-amber-700'}`}>
+                <span>Balance neto</span>
+                <span>{isOk?`✅ Recuperado (${netDebt<0?'+'+mH(Math.abs(netDebt)):'0'})`:`⚠️ Debe ${mH(netDebt)}`}</span>
+              </div>
+              {isOk&&<p className="text-xs text-emerald-600 mt-1">Los minutos debidos fueron recuperados — no afecta la liquidación</p>}
+            </div>
+          );
+        })()}
         {extraHours.length>0&&(
           <div className="bg-emerald-50 rounded-2xl p-4 space-y-1 text-sm">
             <p className="font-bold text-emerald-700 mb-2">Horas extra / remoto</p>
