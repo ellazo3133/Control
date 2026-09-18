@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import logoBase64 from '../assets/logoBase64.js';
 
 const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : '—';
 const fmtDate = s => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR') : '—';
@@ -205,7 +206,7 @@ td{padding:.5rem .6rem;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
 </style></head><body>
 <button class="print-btn" onclick="window.print()">🖨️ Imprimir</button>
 <div class="header">
-  <div><div class="org">El Lazo Juventud Judía</div><div class="org-sub">ellazo.com.ar · info@ellazo.com.ar</div></div>
+  <div style="display:flex;align-items:center;gap:.75rem"><img src="${logoBase64}" alt="El Lazo" style="height:52px;width:auto"/><div><div class="org">El Lazo Juventud Judía</div><div class="org-sub">ellazo.com.ar · info@ellazo.com.ar</div></div></div>
   <div class="title"><h1>Resumen de Liquidación General</h1><p>${monthLabel} · Generado el ${today}</p></div>
 </div>
 

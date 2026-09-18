@@ -498,7 +498,10 @@ export default function EmployeeView({profile,onLogout}) {
               <p className="text-xs text-gray-400">{new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</p>
             </div>
           </div>
-          <button onClick={onLogout} className="text-xs text-gray-400 px-3 py-1.5 rounded-xl hover:bg-gray-100">Salir</button>
+          <div className="flex items-center gap-2">
+            <img src={logo} alt="El Lazo" className="h-8 w-auto opacity-80"/>
+            <button onClick={onLogout} className="text-xs text-gray-400 px-3 py-1.5 rounded-xl hover:bg-gray-100">Salir</button>
+          </div>
         </div>
       </div>
 
