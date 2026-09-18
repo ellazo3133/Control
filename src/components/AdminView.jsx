@@ -1156,9 +1156,9 @@ export default function AdminView({profile,onLogout}){
                       <div className="flex items-center gap-3"><Avatar initials={emp.avatar}/>
                         <div><p className="font-bold text-gray-900 text-sm">{emp.name}</p>
                           <p className="text-xs text-gray-400">Base: {fmtMoney(emp.salary||0)}/mes</p>
-                          {emp.salary>0&&s.scheduled>0&&(
+                          {emp.salary>0&&stats.scheduled>0&&(
                             <p className="text-xs text-gray-300">
-                              Hs: {fmtMoney(emp.extra_hour_rate||Math.round((emp.salary||0)/(s.scheduled*8)))}/h
+                              Hs: {fmtMoney(emp.extra_hour_rate||Math.round((emp.salary||0)/(stats.scheduled*8)))}/h
                             </p>
                           )}
                         </div>
