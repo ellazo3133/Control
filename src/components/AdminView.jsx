@@ -913,7 +913,9 @@ export default function AdminView({profile,onLogout}){
     const {error}=await supabase.from('extra_hours').insert({employee_id:empId,date,hours,description,multiplier,approved_by:profile.id});
     if(error)throw error;
     const {data}=await supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',analysisMonth+'-01').lte('date',analysisMonth+'-31');
-    setExtraHoursList(data||[]);showToast('Horas extra guardadas');
+    setExtraHoursList(data||[]);
+    setExtraHistoryLoaded(false); // force history tab to reload
+    showToast('Horas extra guardadas');
   };
 
   // Payroll
@@ -1325,8 +1327,9 @@ export default function AdminView({profile,onLogout}){
                 const empExtras=extraHoursList.filter(h=>h.employee_id===emp.id);
                 const deductPct=stats.scheduled>0?Math.round((stats.absent/stats.scheduled)*100):0;
                 const deductAmt=Math.round((emp.salary||0)*(deductPct/100));
-                const extraAmt=empExtras.reduce((acc,h)=>acc+Math.round(h.hours*((emp.salary||0)/((stats.scheduled||20)*8))*h.multiplier),0);
-                const estimated=(emp.salary||0)-deductAmt+extraAmt;
+                const hourlyRateEmp=emp.extra_hour_rate||((emp.salary||0)/((stats.scheduled||20)*8));
+                const extraAmt=empExtras.reduce((acc,h)=>acc+Math.round(h.hours*hourlyRateEmp*(h.multiplier||1)),0);
+                const estimated=(emp.salary||0)-deductAmt+extraAmt; // hourlyRateEmp already applied above
                 return(
                   <div key={emp.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
                     <div className="flex items-start justify-between mb-4">
@@ -1555,7 +1558,7 @@ export default function AdminView({profile,onLogout}){
           // Load all extra hours on first visit
           if(!extraHistoryLoaded){
             supabase.from('extra_hours').select('*,profiles(name,avatar)')
-              .order('date',{ascending:false}).limit(200)
+              .order('date',{ascending:false}).limit(500)
               .then(({data})=>{setExtraHistoryAll(data||[]);setExtraHistoryLoaded(true);});
           }
           const fmtM=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
@@ -1674,15 +1677,25 @@ export default function AdminView({profile,onLogout}){
                             const amt=Math.round((h.hours||0)*rate*(h.multiplier||1));
                             return(
                               <div key={h.id} className="flex items-center justify-between px-5 py-3 border-t border-gray-50">
-                                <div>
-                                  <div className="flex items-center gap-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <p className="text-xs font-bold text-gray-800">{h.hours}h</p>
                                     {h.multiplier!==1&&<span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-lg font-bold">×{h.multiplier}</span>}
                                     {h.description&&<p className="text-xs text-gray-500">— {h.description}</p>}
                                   </div>
                                   <p className="text-xs text-gray-400 mt-0.5">{new Date(h.date+'T12:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})}</p>
                                 </div>
-                                <p className="text-sm font-black text-emerald-600">+{fmtM(amt)}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-black text-emerald-600">+{fmtM(amt)}</p>
+                                  <button onClick={async()=>{
+                                    await supabase.from('extra_hours').delete().eq('id',h.id);
+                                    setExtraHistoryLoaded(false);
+                                    setExtraHoursList(p=>p.filter(x=>x.id!==h.id));
+                                    showToast('Registro eliminado');
+                                  }} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}
