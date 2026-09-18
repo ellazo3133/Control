@@ -857,7 +857,7 @@ export default function AdminView({profile,onLogout}){
     const prevMonth=prevDate.toISOString().slice(0,7);
     getRecordsByMonth(prevMonth).then(setPrevMonthRecs).catch(()=>{});
     // Load extra hours for month
-    supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',analysisMonth+'-01').lte('date',analysisMonth+'-31')
+    supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',monthStart).lte('date',monthEnd)
       .then(({data})=>setExtraHoursList(data||[])).catch(()=>{});
     // Load payrolls
     supabase.from('payroll').select('*').eq('month',analysisMonth)
@@ -1007,7 +1007,9 @@ export default function AdminView({profile,onLogout}){
       const{error}=await supabase.from('extra_hours').insert({employee_id:empId,date,hours,description,multiplier,hourly_rate,approved_by:profile.id});
       if(error)throw error;
     }
-    const{data}=await supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',analysisMonth+'-01').lte('date',analysisMonth+'-31');
+    const[yx,mx]=analysisMonth.split('-').map(Number);
+    const mEnd=`${analysisMonth}-${String(new Date(yx,mx,0).getDate()).padStart(2,'0')}`;
+    const{data}=await supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',analysisMonth+'-01').lte('date',mEnd);
     setExtraHoursList(data||[]);
     setExtraHistoryLoaded(false);
     setEditExtraData(null);
