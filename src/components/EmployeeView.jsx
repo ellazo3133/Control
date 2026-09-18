@@ -894,19 +894,54 @@ export default function EmployeeView({profile,onLogout}) {
                     <p className="text-xs text-gray-400">El admin genera la liquidación a fin de mes</p>
                   </div>
                 )}
-                {empExtras.length>0&&(
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-                    <p className="text-xs font-bold text-emerald-700 mb-2">Horas extra / remoto registradas</p>
-                    <div className="space-y-1.5">
-                      {empExtras.map(h=>(
-                        <div key={h.id} className="flex justify-between text-xs">
-                          <span className="text-gray-600">{h.date} — {h.hours}hs{h.description?` (${h.description})`:''}</span>
-                          <span className="font-bold text-emerald-600">x{h.multiplier}</span>
+                {/* Horas extra del mes — siempre visible */}
+                {(()=>{
+                  const fmtM = n => new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
+                  // Hourly rate: use profile extra_hour_rate or auto from payroll base
+                  const baseSal = payroll?.base_salary || currentProfile?.salary || 0;
+                  const scheduledDays = payroll?.days_scheduled || 20;
+                  const hourlyRate = currentProfile?.extra_hour_rate || (baseSal/(scheduledDays*8));
+                  const totalExtraAmt = empExtras.reduce((a,h)=>a+(h.hours*hourlyRate*h.multiplier),0);
+                  return(
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+                        <p className="text-xs font-bold text-gray-700">Horas extra / remoto</p>
+                        {hourlyRate>0&&(
+                          <span className="text-xs text-gray-400">{fmtM(Math.round(hourlyRate))}/h</span>
+                        )}
+                      </div>
+                      {empExtras.length===0?(
+                        <div className="px-4 py-5 text-center">
+                          <p className="text-xs text-gray-400">Sin horas extra registradas este mes</p>
                         </div>
-                      ))}
+                      ):(
+                        <div className="divide-y divide-gray-50">
+                          {empExtras.map(h=>{
+                            const amt = Math.round(h.hours*hourlyRate*h.multiplier);
+                            return(
+                              <div key={h.id} className="px-4 py-3">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-xs font-bold text-gray-800">
+                                      {h.hours}h {h.description?`— ${h.description}`:'extra'}
+                                      {h.multiplier!==1&&<span className="ml-1 text-xs text-amber-600 font-bold">×{h.multiplier}</span>}
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-0.5">{h.date}</p>
+                                  </div>
+                                  <p className="text-sm font-black text-emerald-600">+{fmtM(amt)}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="px-4 py-3 bg-emerald-50 flex justify-between items-center">
+                            <span className="text-xs font-bold text-emerald-700">Total horas extra</span>
+                            <span className="text-sm font-black text-emerald-700">+{fmtM(Math.round(totalExtraAmt))}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
             {tab==='licencias'&&(

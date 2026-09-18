@@ -223,9 +223,9 @@ function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
   const baseSalary=emp.salary||0;
   const deductPct=stats.scheduled>0?Math.round((stats.absent/stats.scheduled)*100):0;
   const deductAmt=Math.round(baseSalary*(deductPct/100));
+  const hourlyRate = emp.extra_hour_rate || (baseSalary/((stats.scheduled||20)*8));
   const extraHrsTotal=extraHours.reduce((acc,h)=>{
-    const emp_salary_hr=baseSalary/((stats.scheduled||20)*8);
-    return acc+(h.hours*emp_salary_hr*h.multiplier);
+    return acc+(h.hours*hourlyRate*h.multiplier);
   },0);
   const [bonus,setBonus]=useState('0');
   const [notes,setNotes]=useState('');
@@ -348,6 +348,7 @@ ${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
       <div className="space-y-4">
         <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-gray-500">Sueldo base</span><span className="font-bold">{fmtMoney(baseSalary)}</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Valor hora {emp.extra_hour_rate?'(configurado)':'(automático)'}</span><span className="font-bold text-sky-600">{fmtMoney(Math.round(hourlyRate))}/h</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Días programados</span><span className="font-bold">{stats.scheduled}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Días trabajados</span><span className="font-bold text-emerald-600">{stats.present}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Ausentes injust.</span><span className="font-bold text-red-500">{stats.absent}</span></div>
@@ -396,7 +397,7 @@ ${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
             {extraHours.map(h=>(
               <div key={h.id} className="flex justify-between text-xs">
                 <span className="text-gray-600">{h.date} — {h.hours}hs {h.description&&`(${h.description})`} x{h.multiplier}</span>
-                <span className="font-bold text-emerald-600">+{fmtMoney(Math.round(h.hours*(emp.salary||0)/((stats.scheduled||20)*8)*h.multiplier))}</span>
+                <span className="font-bold text-emerald-600">+{fmtMoney(Math.round(h.hours*hourlyRate*h.multiplier))}</span>
               </div>
             ))}
             <div className="flex justify-between pt-1 border-t border-emerald-200"><span className="text-emerald-600">Subtotal extra</span><span className="font-bold text-emerald-600">+{fmtMoney(Math.round(extraHrsTotal))}</span></div>
@@ -1020,6 +1021,11 @@ export default function AdminView({profile,onLogout}){
                       <div className="flex items-center gap-3"><Avatar initials={emp.avatar}/>
                         <div><p className="font-bold text-gray-900 text-sm">{emp.name}</p>
                           <p className="text-xs text-gray-400">Base: {fmtMoney(emp.salary||0)}/mes</p>
+                          {emp.salary>0&&s.scheduled>0&&(
+                            <p className="text-xs text-gray-300">
+                              Hs: {fmtMoney(emp.extra_hour_rate||Math.round((emp.salary||0)/(s.scheduled*8)))}/h
+                            </p>
+                          )}
                         </div>
                       </div>
                       {prl?.status==='approved'?<Badge color="green">✓ Aprobado</Badge>:<Badge color="gray">Borrador</Badge>}
@@ -1333,6 +1339,20 @@ export default function AdminView({profile,onLogout}){
         <Modal open={true} onClose={()=>setEditSalaryEmp(null)} title={`Sueldo — ${editSalaryEmp.name}`}>
           <div className="space-y-4">
             <Input label="Sueldo base mensual (ARS)" type="number" value={editSalaryVal} onChange={setEditSalaryVal} placeholder="Ej: 500000"/>
+            {(()=>{
+              const s=getStats(editSalaryEmp.id);
+              const autoRate=editSalaryEmp.salary>0&&s.scheduled>0?Math.round(editSalaryEmp.salary/(s.scheduled*8)):0;
+              return(
+                <div className="space-y-2">
+                  <Input label="Valor hora extra (ARS) — opcional" type="number" value={editExtraRateVal} onChange={setEditExtraRateVal} placeholder={autoRate>0?`Auto: ${fmtMoney(autoRate)}/h`:'Ej: 3500'}/>
+                  <p className="text-xs text-gray-400">
+                    {editExtraRateVal?`Valor fijo: ${fmtMoney(parseFloat(editExtraRateVal)||0)}/h`
+                      :autoRate>0?`Se calcula automáticamente: ${fmtMoney(autoRate)}/h (sueldo ÷ días ÷ 8hs)`
+                      :'Ingresá el sueldo para ver el cálculo automático'}
+                  </p>
+                </div>
+              );
+            })()}
             <p className="text-xs text-gray-400">Este valor se usa para calcular descuentos por faltas y liquidación mensual.</p>
             <button onClick={saveSalary} className="w-full py-3 rounded-2xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>Guardar sueldo</button>
           </div>
