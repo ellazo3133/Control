@@ -678,6 +678,7 @@ export default function AdminView({profile,onLogout}){
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3500);};
   const todayDow=new Date().getDay();
+  const can=(key)=>hasPermission(profile,key);
 
   const loadAll=useCallback(async()=>{
     const [empsRes,schedsRes,todayRes,hqRes,holsRes]=await Promise.allSettled([
