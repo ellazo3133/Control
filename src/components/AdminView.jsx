@@ -695,6 +695,10 @@ export default function AdminView({profile,onLogout}){
   const [showNewRec,setShowNewRec]=useState(false);
   const [showNewAdmin,setShowNewAdmin]=useState(false);
   const [editAdminPerms,setEditAdminPerms]=useState(null);
+  const [extraHistoryEmp,setExtraHistoryEmp]=useState('all');
+  const [extraHistoryPeriod,setExtraHistoryPeriod]=useState('month');
+  const [extraHistoryAll,setExtraHistoryAll]=useState([]);
+  const [extraHistoryLoaded,setExtraHistoryLoaded]=useState(false);
   const [showAddEmp,setShowAddEmp]=useState(false);
   const [showAddHol,setShowAddHol]=useState(false);
   const [editHol,setEditHol]=useState(null);
@@ -1055,6 +1059,7 @@ export default function AdminView({profile,onLogout}){
     ['licencias','Licencias','M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',null],
     ['excepciones','Excepciones','M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z','exceptions'],
     ['alertas','Alertas','M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9','notifications'],
+    ['extra_hours','Hs Extra','M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',null],
     ['settings','Config','M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',null],
   ].filter(([id,label,path,perm])=>!perm||can(perm));
 
@@ -1546,6 +1551,151 @@ export default function AdminView({profile,onLogout}){
         )}
 
         {/* SETTINGS */}
+        {tab==='extra_hours'&&(()=>{
+          // Load all extra hours on first visit
+          if(!extraHistoryLoaded){
+            supabase.from('extra_hours').select('*,profiles(name,avatar)')
+              .order('date',{ascending:false}).limit(200)
+              .then(({data})=>{setExtraHistoryAll(data||[]);setExtraHistoryLoaded(true);});
+          }
+          const fmtM=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
+          const now=new Date();
+          const thisMonth=now.toISOString().slice(0,7);
+          const lastMonth=new Date(now.getFullYear(),now.getMonth()-1,1).toISOString().slice(0,7);
+          const thisWeekStart=new Date(now);thisWeekStart.setDate(now.getDate()-now.getDay());
+          const thisWeekISO=thisWeekStart.toISOString().split('T')[0];
+
+          let filtered=extraHistoryAll;
+          if(extraHistoryEmp!=='all') filtered=filtered.filter(h=>h.employee_id===extraHistoryEmp);
+          if(extraHistoryPeriod==='week') filtered=filtered.filter(h=>h.date>=thisWeekISO);
+          else if(extraHistoryPeriod==='month') filtered=filtered.filter(h=>h.date.startsWith(thisMonth));
+          else if(extraHistoryPeriod==='lastmonth') filtered=filtered.filter(h=>h.date.startsWith(lastMonth));
+
+          const totalHours=filtered.reduce((a,h)=>a+(h.hours||0),0);
+          const totalAmt=filtered.reduce((a,h)=>{
+            const emp=employees.find(e=>e.id===h.employee_id);
+            const sched=empSchedMap?.[h.employee_id]||{};
+            const days=Object.values(sched).filter(s=>s?.active).length||20;
+            const rate=emp?.extra_hour_rate||((emp?.salary||0)/(days*8));
+            return a+Math.round((h.hours||0)*rate*(h.multiplier||1));
+          },0);
+
+          return(
+            <div className="space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>Horas extra</h2>
+                  <p className="text-sm text-gray-400">Historial completo de horas extra y remoto</p>
+                </div>
+                <button onClick={()=>setShowExtraHours(true)}
+                  className="px-4 py-2.5 rounded-2xl text-sm font-bold text-white"
+                  style={{background:'linear-gradient(135deg,#059669,#0d9488)'}}>
+                  + Agregar
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="flex gap-2 flex-wrap">
+                <select value={extraHistoryEmp} onChange={e=>setExtraHistoryEmp(e.target.value)}
+                  className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none bg-white flex-1">
+                  <option value="all">Todos los empleados</option>
+                  {employees.filter(e=>e.role==='employee').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+                <div className="flex rounded-2xl border border-gray-200 overflow-hidden bg-white">
+                  {[['week','Esta semana'],['month','Este mes'],['lastmonth','Mes anterior'],['all','Todo']].map(([v,l])=>(
+                    <button key={v} onClick={()=>setExtraHistoryPeriod(v)}
+                      className={`px-3 py-2.5 text-xs font-bold transition-all ${extraHistoryPeriod===v?'bg-sky-500 text-white':'text-gray-500 hover:bg-gray-50'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Summary cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white rounded-2xl border border-gray-100 p-3.5 text-center">
+                  <p className="text-xl font-black text-sky-600">{filtered.length}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Registros</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 p-3.5 text-center">
+                  <p className="text-xl font-black text-violet-600">{totalHours.toFixed(1)}h</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Horas totales</p>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 p-3.5 text-center">
+                  <p className="text-lg font-black text-emerald-600">{fmtM(totalAmt)}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Total a pagar</p>
+                </div>
+              </div>
+
+              {/* List */}
+              {!extraHistoryLoaded?(
+                <div className="text-center py-10"><div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto"/></div>
+              ):filtered.length===0?(
+                <div className="bg-white rounded-3xl border border-gray-100 p-10 text-center">
+                  <p className="text-3xl mb-2">📋</p>
+                  <p className="text-sm font-bold text-gray-700">Sin registros</p>
+                  <p className="text-xs text-gray-400 mt-1">No hay horas extra para este filtro</p>
+                </div>
+              ):(
+                <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden">
+                  {/* Group by employee */}
+                  {(()=>{
+                    const grouped={};
+                    filtered.forEach(h=>{
+                      const key=h.employee_id;
+                      if(!grouped[key])grouped[key]=[];
+                      grouped[key].push(h);
+                    });
+                    return Object.entries(grouped).map(([empId,hrs])=>{
+                      const emp=employees.find(e=>e.id===empId);
+                      const sched=empSchedMap?.[empId]||{};
+                      const days=Object.values(sched).filter(s=>s?.active).length||20;
+                      const rate=emp?.extra_hour_rate||((emp?.salary||0)/(days*8));
+                      const empTotal=hrs.reduce((a,h)=>a+Math.round((h.hours||0)*rate*(h.multiplier||1)),0);
+                      const empHours=hrs.reduce((a,h)=>a+(h.hours||0),0);
+                      return(
+                        <div key={empId} className="border-b border-gray-50 last:border-0">
+                          {/* Employee header */}
+                          <div className="flex items-center justify-between px-5 py-3 bg-gray-50">
+                            <div className="flex items-center gap-2">
+                              <Avatar initials={emp?.avatar||'?'}/>
+                              <div>
+                                <p className="text-sm font-bold text-gray-900">{emp?.name||'?'}</p>
+                                <p className="text-xs text-gray-400">{empHours.toFixed(1)}h · {fmtM(rate)}/h</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-black text-emerald-600">{fmtM(empTotal)}</p>
+                              <p className="text-xs text-gray-400">{hrs.length} registro{hrs.length!==1?'s':''}</p>
+                            </div>
+                          </div>
+                          {/* Records */}
+                          {hrs.map(h=>{
+                            const amt=Math.round((h.hours||0)*rate*(h.multiplier||1));
+                            return(
+                              <div key={h.id} className="flex items-center justify-between px-5 py-3 border-t border-gray-50">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs font-bold text-gray-800">{h.hours}h</p>
+                                    {h.multiplier!==1&&<span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-lg font-bold">×{h.multiplier}</span>}
+                                    {h.description&&<p className="text-xs text-gray-500">— {h.description}</p>}
+                                  </div>
+                                  <p className="text-xs text-gray-400 mt-0.5">{new Date(h.date+'T12:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})}</p>
+                                </div>
+                                <p className="text-sm font-black text-emerald-600">+{fmtM(amt)}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {tab==='settings'&&(
           <div className="space-y-5 max-w-md">
             <h2 className="text-2xl font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>Configuración</h2>
