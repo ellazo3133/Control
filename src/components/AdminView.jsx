@@ -292,6 +292,8 @@ export default function AdminView({profile,onLogout}){
   const [monthRecs,setMonthRecs]=useState([]);
   const [prevMonthRecs,setPrevMonthRecs]=useState([]);
   const [approvedVacations,setApprovedVacations]=useState([]);
+  const [monthExceptions,setMonthExceptions]=useState([]);
+  const [approvedLeaves,setApprovedLeaves]=useState([]);
   const [holidays,setHolidays]=useState([]);
   const [hq,setHq]=useState(null);
   const [toast,setToast]=useState(null);
@@ -362,6 +364,14 @@ export default function AdminView({profile,onLogout}){
     supabase.from('vacation_requests').select('employee_id,start_date,end_date')
       .eq('status','approved').lte('start_date',monthEnd).gte('end_date',monthStart)
       .then(({data})=>setApprovedVacations(data||[])).catch(()=>{});
+    // Load schedule exceptions for the month
+    supabase.from('schedule_exceptions').select('employee_id,date,type')
+      .gte('date',monthStart).lte('date',monthEnd)
+      .then(({data})=>setMonthExceptions(data||[])).catch(()=>{});
+    // Load approved leave requests that overlap this month
+    supabase.from('leave_requests').select('employee_id,start_date,end_date,type')
+      .eq('status','approved').lte('start_date',monthEnd).gte('end_date',monthStart)
+      .then(({data})=>setApprovedLeaves(data||[])).catch(()=>{});
     // Load previous month for trend comparison
     const prevDate=new Date(y,m-2,1);
     const prevMonth=prevDate.toISOString().slice(0,7);
@@ -570,8 +580,17 @@ export default function AdminView({profile,onLogout}){
       } else if(rec?.status==='justified'){
         justified++;
       } else if(approvedVacations.some(v=>v.employee_id===empId&&date>=v.start_date&&date<=v.end_date)){
-        // Día de vacaciones aprobadas → no cuenta como falta
-        justified++; // lo contamos como justificado para que no baje el %
+        // Vacaciones aprobadas → justificado
+        justified++;
+      } else if(holidays.some(h=>h.date===date)){
+        // Feriado → no cuenta como falta ni como día programado
+        scheduled--; // lo quitamos del total porque no era día laboral
+      } else if(monthExceptions.some(e=>e.employee_id===empId&&e.date===date&&e.type==='free')){
+        // Excepción "No trabaja" → no cuenta como falta
+        scheduled--; // tampoco era día laboral ese día
+      } else if(approvedLeaves.some(l=>l.employee_id===empId&&date>=l.start_date&&date<=l.end_date)){
+        // Licencia aprobada (enfermedad, duelo, etc.) → justificado
+        justified++;
       } else if(date<=today){
         absent++;
         totalExpected+=expectedMinutes;
