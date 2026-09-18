@@ -240,7 +240,7 @@ function CelebrationModal({open,onClose,tipo,jornada,sched}) {
 }
 
 // ─── STEP MODAL (GPS + BIO) ───────────────────────────────────────────────────
-function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,onDone}) {
+function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,todayException,onDone}) {
   const [step,setStep]=useState('geo');
   const [msg,setMsg]=useState('');const [err,setErr]=useState('');const [loading,setLoading]=useState(false);
   const [geoData,setGeoData]=useState(null);
@@ -249,7 +249,11 @@ function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,onD
 
   const isIn=mode==='checkin';
   const todayDow=new Date().getDay();
-  const sched=schedule[todayDow];
+  const schedBase=schedule[todayDow];
+  // Si hay excepción de horario custom/half, usarla para calcular tardanza
+  const sched=(todayException&&(todayException.type==='custom'||todayException.type==='half')&&todayException.start_time)
+    ? {...schedBase, start_time:todayException.start_time, end_time:todayException.end_time||schedBase?.end_time}
+    : schedBase;
 
   const doGeo=async()=>{
     setLoading(true);setErr('');setMsg('Obteniendo ubicación GPS...');
@@ -270,13 +274,16 @@ function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,onD
       const nowMins=new Date().getHours()*60+new Date().getMinutes();
 
       if(isIn){
-        // Calcular minutos tarde (con tolerancia)
-        const expectedStart=sched?timeToMins(sched.start_time):0;
+        // Usar horario de excepción si hay una custom/half para hoy
+        const effectiveSched = (todayException&&(todayException.type==='custom'||todayException.type==='half')&&todayException.start_time)
+          ? {...sched, start_time: todayException.start_time, end_time: todayException.end_time||sched?.end_time}
+          : sched;
+        const expectedStart=effectiveSched?timeToMins(effectiveSched.start_time):0;
         const rawLate=Math.max(0,nowMins-expectedStart);
         const minutesLate=Math.max(0,rawLate-TOLERANCE_MINUTES);
         await checkIn({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id,minutesLate});
         const updated=await getTodayRecord(profile.id);
-        const jornada=calcJornada(updated,sched);
+        const jornada=calcJornada(updated,effectiveSched);
         onDone(minutesLate>0?'checkin_tarde':'checkin_ok',jornada);
       } else {
         await checkOut({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id});
@@ -882,7 +889,7 @@ export default function EmployeeView({profile,onLogout}) {
 
       {hq&&<StepModal open={!!stepMode} onClose={()=>setStepMode(null)} mode={stepMode}
         profile={currentProfile} hq={hq} records={records} setRecords={setRecords}
-        schedule={schedule} onDone={handleStepDone}/>}
+        schedule={schedule} todayException={todayException} onDone={handleStepDone}/>}
 
       <CelebrationModal open={!!celebration} onClose={()=>setCelebration(null)}
         tipo={celebration?.tipo} jornada={celebration?.jornada} sched={todaySched}/>

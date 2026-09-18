@@ -603,7 +603,9 @@ export default function AdminView({profile,onLogout}){
       totalWorked,totalExpected,
       totalExtraMins,totalMissingMins,
       pct:scheduled>0?Math.round(present/scheduled*100):0,
+      punctPct:present>0?Math.round((present-lateCount)/present*100):100,
       lateHM: lateMins>0?`${Math.floor(lateMins/60)}h ${lateMins%60}m`:'0',
+      totalWork: totalWorked,
     };
   };
 
@@ -980,12 +982,15 @@ export default function AdminView({profile,onLogout}){
                     )}
                   </div>
                   <div className="grid grid-cols-4 gap-3 text-center">
-                    {[
-                      {l:'Asist. promedio',v:`${avgCurrent}%`,c:'text-sky-700 text-xl'},
-                      {l:'Presentes',v:totalPresent,c:'text-emerald-600 text-xl'},
-                      {l:'Ausentes',v:totalAbsent,c:'text-red-500 text-xl'},
-                      {l:'Tardanzas',v:totalLate,c:'text-amber-600 text-xl'},
-                    ].map(({l,v,c})=>(
+                    {(()=>{
+                      const avgPunct=allCurrent.filter(s=>s.present>0).length?Math.round(allCurrent.filter(s=>s.present>0).reduce((a,s)=>a+(s.punctPct||100),0)/allCurrent.filter(s=>s.present>0).length):100;
+                      return[
+                        {l:'Asist. promedio',v:`${avgCurrent}%`,c:'text-sky-700 text-xl'},
+                        {l:'Puntualidad',v:`${avgPunct}%`,c:'text-violet-600 text-xl'},
+                        {l:'Ausentes',v:totalAbsent,c:'text-red-500 text-xl'},
+                        {l:'Tardanzas',v:totalLate,c:'text-amber-600 text-xl'},
+                      ];
+                    })().map(({l,v,c})=>(
                       <div key={l} className="bg-white/70 rounded-2xl p-2.5">
                         <p className={`font-black ${c}`}>{v}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{l}</p>
@@ -1018,9 +1023,25 @@ export default function AdminView({profile,onLogout}){
                         })()}
                       </div>
                     </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden">
-                      <div className={`h-full rounded-full bg-gradient-to-r ${bC}`} style={{width:`${s.pct}%`}}/>
+                    <div className="mb-1">
+                      <div className="flex justify-between mb-1"><span className="text-xs text-gray-400">Asistencia</span><span className={`text-xs font-bold ${pC}`}>{s.pct}%</span></div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div className={`h-full rounded-full bg-gradient-to-r ${bC}`} style={{width:`${s.pct}%`}}/>
+                      </div>
                     </div>
+                    {(()=>{
+                      const pp=s.punctPct;
+                      const pPC=pp>=90?'text-violet-600':pp>=70?'text-amber-600':'text-red-500';
+                      const pBC=pp>=90?'from-violet-400 to-violet-500':pp>=70?'from-amber-400 to-amber-500':'from-red-400 to-red-500';
+                      return s.present>0?(
+                        <div className="mb-4">
+                          <div className="flex justify-between mb-1"><span className="text-xs text-gray-400">Puntualidad</span><span className={`text-xs font-bold ${pPC}`}>{pp}%</span></div>
+                          <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                            <div className={`h-full rounded-full bg-gradient-to-r ${pBC}`} style={{width:`${pp}%`}}/>
+                          </div>
+                        </div>
+                      ):<div className="mb-4"/>;
+                    })()}
                     <div className="grid grid-cols-4 gap-2 text-center mb-3">
                       {[{l:'Pres.',v:s.present,c:'text-emerald-600'},{l:'Aus.',v:s.absent,c:'text-red-500'},{l:'Just.',v:s.justified,c:'text-amber-600'},{l:'Tard.',v:s.lateCount,c:'text-violet-600'}].map(({l,v,c})=>(
                         <div key={l} className="bg-gray-50 rounded-2xl p-2.5"><p className={`text-xl font-black ${c}`}>{v}</p><p className="text-xs text-gray-400">{l}</p></div>
