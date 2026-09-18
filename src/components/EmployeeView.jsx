@@ -270,38 +270,52 @@ function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,tod
     setLoading(false);
   };
 
-  const [skipBio,setSkipBio]=useState(false);
+  const [bioFailed,setBioFailed]=useState(false);
+
+  const doCheckinCheckout=async()=>{
+    // Ejecutar check-in/out después de GPS (con o sin bio)
+    const now=new Date().toISOString();
+    const nowMins=new Date().getHours()*60+new Date().getMinutes();
+    if(isIn){
+      const effectiveSched=(todayException&&(todayException.type==='custom'||todayException.type==='half')&&todayException.start_time)
+        ?{...sched,start_time:todayException.start_time,end_time:todayException.end_time||sched?.end_time}:sched;
+      const expectedStart=effectiveSched?timeToMins(effectiveSched.start_time):0;
+      const rawLate=Math.max(0,nowMins-expectedStart);
+      const minutesLate=Math.max(0,rawLate-TOLERANCE_MINUTES);
+      await checkIn({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id,minutesLate});
+      const updated=await getTodayRecord(profile.id);
+      const jornada=calcJornada(updated,effectiveSched);
+      onDone(minutesLate>0?'checkin_tarde':'checkin_ok',jornada);
+    } else {
+      await checkOut({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id});
+      const updated=await getTodayRecord(profile.id);
+      const jornada=calcJornada(updated,sched);
+      let tipo='checkout_ok';
+      if(jornada?.horasExtra>5)tipo='checkout_extra';
+      else if(jornada?.horasFaltantes>5)tipo='checkout_temprano';
+      onDone(tipo,jornada);
+    }
+    onClose();
+  };
 
   const doBio=async()=>{
-    setLoading(true);setErr('');setMsg('Esperando autenticación biométrica...');
+    // Si ya falló la bio antes o no tiene credencial, ir directo al registro
+    if(bioFailed||!profile.bio_cred_id){
+      setLoading(true);setErr('');
+      try{ await doCheckinCheckout(); }catch(e){ setErr(e.message); }
+      setLoading(false);
+      return;
+    }
+    setLoading(true);setErr('');setMsg('Esperando huella o Face ID...');
     try{
-      if(!skipBio) await verifyBiometric(profile.bio_cred_id||null);
-      const now=new Date().toISOString();
-      const nowMins=new Date().getHours()*60+new Date().getMinutes();
-
-      if(isIn){
-        // Usar horario de excepción si hay una custom/half para hoy
-        const effectiveSched = (todayException&&(todayException.type==='custom'||todayException.type==='half')&&todayException.start_time)
-          ? {...sched, start_time: todayException.start_time, end_time: todayException.end_time||sched?.end_time}
-          : sched;
-        const expectedStart=effectiveSched?timeToMins(effectiveSched.start_time):0;
-        const rawLate=Math.max(0,nowMins-expectedStart);
-        const minutesLate=Math.max(0,rawLate-TOLERANCE_MINUTES);
-        await checkIn({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id,minutesLate});
-        const updated=await getTodayRecord(profile.id);
-        const jornada=calcJornada(updated,effectiveSched);
-        onDone(minutesLate>0?'checkin_tarde':'checkin_ok',jornada);
-      } else {
-        await checkOut({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id});
-        const updated=await getTodayRecord(profile.id);
-        const jornada=calcJornada(updated,sched);
-        let tipo='checkout_ok';
-        if(jornada?.horasExtra>5)tipo='checkout_extra';
-        else if(jornada?.horasFaltantes>5)tipo='checkout_temprano';
-        onDone(tipo,jornada);
-      }
-      onClose();
-    }catch(e){setErr(e.name==='NotAllowedError'||e.message?.includes('cancel')?'Biometría cancelada. Intentá de nuevo.':e.message);}
+      await verifyBiometric(profile.bio_cred_id);
+      await doCheckinCheckout();
+    }catch(e){
+      // Bio falló → mostrar opción de continuar con GPS
+      setBioFailed(true);
+      setErr('No se pudo verificar la biometría.');
+      setMsg('');
+    }
     setLoading(false);
   };
 
@@ -781,6 +795,7 @@ export default function EmployeeView({profile,onLogout}) {
             ['vacaciones','🏖️','Vacaciones'],
             ['licencias','📄', 'Licencias'],
             ['tareas',   '✅', 'Tareas'],
+            ['perfil',   '👤', 'Mi perfil'],
           ].map(([t, icon, label]) => (
             <button key={t} onClick={()=>setTab(tab===t?null:t)}
               className={`flex flex-col items-center gap-1.5 py-3.5 px-1 rounded-2xl border-2 transition-all active:scale-95
@@ -905,6 +920,45 @@ export default function EmployeeView({profile,onLogout}) {
                 profile={currentProfile}
                 hireDate={currentProfile.hire_date}
               />
+            )}
+            {tab==='perfil'&&(
+              <div className="space-y-4">
+                <h3 className="font-bold text-gray-900">Mi perfil</h3>
+
+                {/* Biometric registration */}
+                <div className={`rounded-2xl border p-4 ${currentProfile.bio_registered?'bg-emerald-50 border-emerald-100':'bg-amber-50 border-amber-200'}`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-2xl">{currentProfile.bio_registered?'🔐':'⚠️'}</span>
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">
+                        {currentProfile.bio_registered?'Biometría registrada':'Sin biometría registrada'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {currentProfile.bio_registered
+                          ?'Tu huella o Face ID está vinculado a este dispositivo.'
+                          :'Registrá tu huella o Face ID para hacer check-in más seguro.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={handleRegBio} disabled={bioLoading}
+                    className={`w-full py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 ${currentProfile.bio_registered?'bg-sky-500 hover:bg-sky-600':'bg-amber-600 hover:bg-amber-700'}`}>
+                    {bioLoading?'Registrando...'
+                      :currentProfile.bio_registered?'Volver a registrar biometría':'Registrar huella / Face ID'}
+                  </button>
+                  {currentProfile.bio_registered&&(
+                    <p className="text-xs text-gray-400 mt-2 text-center">
+                      Si cambiaste de celular o tuviste problemas, registrala de nuevo desde este dispositivo.
+                    </p>
+                  )}
+                </div>
+
+                {/* Profile info */}
+                <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-gray-400">Nombre</span><span className="font-bold text-gray-900">{currentProfile.name}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Email</span><span className="font-bold text-gray-900 text-xs">{currentProfile.email}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">Rol</span><span className="font-bold text-gray-900 capitalize">{currentProfile.role}</span></div>
+                </div>
+              </div>
             )}
             {tab==='history'&&(
               <div>
