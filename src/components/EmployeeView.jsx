@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import logoWhite from '../assets/logo-ellazo-white.png';
 import { usePWA } from '../hooks/usePWA';
 import MonthCalendar from './MonthCalendar';
 import VacacionesView from './VacacionesView';
