@@ -217,6 +217,105 @@ function ExtraHoursModal({employees,onClose,onSave}){
   );
 }
 
+// ─── NEW RECORD MODAL (carga manual admin) ────────────────────────────────────
+function NewRecordModal({employees,defaultDate,onSave,onClose}){
+  const today=localDateISO();
+  const [empId,setEmpId]=useState(employees[0]?.id||'');
+  const [date,setDate]=useState(defaultDate||today);
+  const [ci,setCi]=useState('09:00');
+  const [co,setCo]=useState('18:00');
+  const [reason,setReason]=useState('');
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState('');
+
+  const doSave=async()=>{
+    if(!empId) return setErr('Elegí un empleado');
+    if(!date)  return setErr('Ingresá la fecha');
+    if(!ci)    return setErr('Ingresá la hora de entrada');
+    if(co&&co<=ci) return setErr('La salida debe ser después de la entrada');
+    setSaving(true);setErr('');
+    try{
+      const checkInISO=new Date(date+'T'+ci+':00').toISOString();
+      const checkOutISO=co?new Date(date+'T'+co+':00').toISOString():null;
+      const minutesWorked=co?Math.round((new Date(checkOutISO)-new Date(checkInISO))/60000):null;
+      await onSave({
+        empId, date,
+        check_in: checkInISO,
+        check_out: checkOutISO,
+        minutes_worked: minutesWorked,
+        status: 'present',
+        reason: reason||'Carga manual por admin',
+      });
+      onClose();
+    }catch(e){setErr(e.message);}
+    setSaving(false);
+  };
+
+  return(
+    <Modal open={true} onClose={onClose} title="Agregar registro manual">
+      <div className="space-y-4">
+        <div className="bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3 flex items-start gap-2">
+          <span className="text-base flex-shrink-0">⚠️</span>
+          <p className="text-xs text-amber-700">Este registro queda marcado como <strong>carga manual del admin</strong> y aparece en el historial de auditoría.</p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Empleado</label>
+          <select value={empId} onChange={e=>setEmpId(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50">
+            {employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Fecha</label>
+          <input type="date" value={date} max={today} onChange={e=>setDate(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50"/>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Entrada</label>
+            <input type="time" value={ci} onChange={e=>setCi(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Salida (opcional)</label>
+            <input type="time" value={co} onChange={e=>setCo(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+          </div>
+        </div>
+
+        {ci&&co&&ci<co&&(
+          <div className="bg-sky-50 rounded-2xl px-4 py-2.5 text-center">
+            <p className="text-xs text-sky-600 font-bold">
+              {(()=>{const mins=Math.round((new Date('2000-01-01T'+co)-new Date('2000-01-01T'+ci))/60000);return `${Math.floor(mins/60)}h ${mins%60}m trabajados`;})()}
+            </p>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Motivo de carga manual</label>
+          <input value={reason} onChange={e=>setReason(e.target.value)}
+            placeholder="Ej: No tenía celular, problema técnico..."
+            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50"/>
+        </div>
+
+        {err&&<p className="text-red-500 text-xs bg-red-50 px-3 py-2 rounded-xl">{err}</p>}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={onClose} className="py-3 rounded-2xl text-sm font-bold border-2 border-gray-200 text-gray-500">Cancelar</button>
+          <button onClick={doSave} disabled={saving}
+            className="py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
+            style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
+            {saving?'Guardando...':'Guardar registro'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── PAYROLL MODAL ────────────────────────────────────────────────────────────// ─── EXTRA HOURS MODAL ────────────────────────────────────────────────────────
 
 function PayrollModal({emp,month,stats,extraHours,onClose,onSave}){
@@ -453,6 +552,7 @@ export default function AdminView({profile,onLogout}){
 
   const [editRec,setEditRec]=useState(null);
   const [auditRecId,setAuditRecId]=useState(null);
+  const [showNewRec,setShowNewRec]=useState(false);
   const [showAddEmp,setShowAddEmp]=useState(false);
   const [showAddHol,setShowAddHol]=useState(false);
   const [editHol,setEditHol]=useState(null);
@@ -627,6 +727,33 @@ export default function AdminView({profile,onLogout}){
       setFilteredRecs(updated);setEditRec(null);showToast('Registro actualizado');}
     catch(e){showToast(e.message,'error');}
   };
+  const handleNewRec=async({empId,date,check_in,check_out,minutes_worked,status,reason})=>{
+    // Check if record already exists for this employee+date
+    const existing=filteredRecs.find(r=>r.employee_id===empId&&r.date===date);
+    if(existing){
+      // Update existing record
+      await adminEditRecord(existing.id,{check_in,check_out,minutes_worked,status},profile.id,reason);
+    } else {
+      // Insert new record
+      const {error}=await supabase.from('attendance_records').insert({
+        employee_id:empId, date, check_in, check_out,
+        minutes_worked, status, edited_by:profile.id,
+        edited_at:new Date().toISOString(), edit_reason:reason,
+      });
+      if(error) throw error;
+      // Log in attendance_edits
+      await supabase.from('attendance_edits').insert({
+        record_id:null, edited_by:profile.id,
+        field_changed:'manual_entry', old_value:null,
+        new_value:`${date} ${check_in?.slice(11,16)||''}-${check_out?.slice(11,16)||''}`,
+        reason,
+      }).catch(()=>{});
+    }
+    const updated=await getFilteredRecords({date:filterDate||undefined,employeeId:filterEmp});
+    setFilteredRecs(updated);
+    showToast('Registro guardado');
+  };
+
   const handleManualRecord=async(empId,date,status,just)=>{
     try{await adminAddManualRecord({employeeId:empId,date,status,justification:just,adminId:profile.id});
       const updated=await getFilteredRecords({date:filterDate||undefined,employeeId:filterEmp});
@@ -920,19 +1047,27 @@ export default function AdminView({profile,onLogout}){
         {tab==='records'&&(
           <div className="space-y-4">
             <h2 className="text-2xl font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>Registros</h2>
-            <div className="flex gap-2 flex-wrap">
-              <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
-              <select value={filterEmp} onChange={e=>setFilterEmp(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none bg-white">
-                <option value="all">Todos</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-              <button onClick={()=>{setFilterDate('');setFilterEmp('all');}} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">Limpiar</button>
+            <div className="flex gap-2 flex-wrap items-center justify-between">
+              <div className="flex gap-2 flex-wrap">
+                <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
+                <select value={filterEmp} onChange={e=>setFilterEmp(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none bg-white">
+                  <option value="all">Todos</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+                <button onClick={()=>{setFilterDate('');setFilterEmp('all');}} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">Limpiar</button>
+              </div>
+              <button onClick={()=>setShowNewRec(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold text-white flex-shrink-0"
+                style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+                Agregar registro
+              </button>
             </div>
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 divide-y divide-gray-50">
               {filteredRecs.length===0&&<p className="text-sm text-gray-400 text-center py-10">Sin registros</p>}
               {filteredRecs.map(rec=>{
                 const mins=rec.check_in&&rec.check_out?Math.round((new Date(rec.check_out)-new Date(rec.check_in))/60000):null;
                 return(
-                  <div key={rec.id} className="px-5 py-4">
+                  <div key={rec.id} className={`px-5 py-4 ${rec.edit_reason==='Carga manual por admin'||rec.edited_by?'bg-sky-50/30':''}`}>
                     <div className="flex items-start gap-3">
                       {rec.profiles&&<Avatar initials={rec.profiles.avatar} size="sm"/>}
                       <div className="flex-1 min-w-0">
@@ -1359,6 +1494,7 @@ export default function AdminView({profile,onLogout}){
         </Modal>
       )}
       {editRec&&<EditRecModal rec={editRec} onSave={handleSaveRec} onClose={()=>setEditRec(null)} adminId={profile.id}/>}
+      {showNewRec&&<NewRecordModal employees={employees} defaultDate={filterDate||localDateISO()} onSave={handleNewRec} onClose={()=>setShowNewRec(false)}/>}
       {auditRecId&&<AuditHistory recordId={auditRecId} onClose={()=>setAuditRecId(null)}/>}
       {showExtraHours&&<ExtraHoursModal employees={employees} onClose={()=>setShowExtraHours(false)} onSave={handleSaveExtra}/>}
       {payrollEmp&&(
