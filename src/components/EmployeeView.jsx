@@ -270,10 +270,12 @@ function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,tod
     setLoading(false);
   };
 
+  const [skipBio,setSkipBio]=useState(false);
+
   const doBio=async()=>{
     setLoading(true);setErr('');setMsg('Esperando autenticación biométrica...');
     try{
-      await verifyBiometric(profile.bio_cred_id||null);
+      if(!skipBio) await verifyBiometric(profile.bio_cred_id||null);
       const now=new Date().toISOString();
       const nowMins=new Date().getHours()*60+new Date().getMinutes();
 
@@ -573,7 +575,7 @@ export default function EmployeeView({profile,onLogout}) {
               {/* Botones */}
               <div className="space-y-2.5">
                 {!todayRec?.check_in?(
-                  <button onClick={()=>setStepMode('checkin')} disabled={!currentProfile.bio_registered}
+                  <button onClick={()=>setStepMode('checkin')}
                     className="w-full py-4 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40"
                     style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
                     <span>📍</span> Registrar entrada
