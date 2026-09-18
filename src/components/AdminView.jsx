@@ -291,6 +291,7 @@ export default function AdminView({profile,onLogout}){
   const [filteredRecs,setFilteredRecs]=useState([]);
   const [monthRecs,setMonthRecs]=useState([]);
   const [prevMonthRecs,setPrevMonthRecs]=useState([]);
+  const [approvedVacations,setApprovedVacations]=useState([]);
   const [holidays,setHolidays]=useState([]);
   const [hq,setHq]=useState(null);
   const [toast,setToast]=useState(null);
@@ -354,8 +355,14 @@ export default function AdminView({profile,onLogout}){
 
   useEffect(()=>{
     getRecordsByMonth(analysisMonth).then(setMonthRecs).catch(()=>{});
-    // Load previous month for trend comparison
+    // Load approved vacations that overlap this month
     const [y,m]=analysisMonth.split('-').map(Number);
+    const monthStart=`${analysisMonth}-01`;
+    const monthEnd=`${analysisMonth}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+    supabase.from('vacation_requests').select('employee_id,start_date,end_date')
+      .eq('status','approved').lte('start_date',monthEnd).gte('end_date',monthStart)
+      .then(({data})=>setApprovedVacations(data||[])).catch(()=>{});
+    // Load previous month for trend comparison
     const prevDate=new Date(y,m-2,1);
     const prevMonth=prevDate.toISOString().slice(0,7);
     getRecordsByMonth(prevMonth).then(setPrevMonthRecs).catch(()=>{});
@@ -562,6 +569,9 @@ export default function AdminView({profile,onLogout}){
         }
       } else if(rec?.status==='justified'){
         justified++;
+      } else if(approvedVacations.some(v=>v.employee_id===empId&&date>=v.start_date&&date<=v.end_date)){
+        // Día de vacaciones aprobadas → no cuenta como falta
+        justified++; // lo contamos como justificado para que no baje el %
       } else if(date<=today){
         absent++;
         totalExpected+=expectedMinutes;
