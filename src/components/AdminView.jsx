@@ -474,6 +474,42 @@ ${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
         <div className="bg-red-50 rounded-2xl p-4 space-y-1 text-sm">
           <div className="flex justify-between"><span className="text-red-600">Descuento por faltas ({deductPct}%)</span><span className="font-bold text-red-600">-{fmtMoney(deductAmt)}</span></div>
         </div>
+
+        {/* Horas extra */}
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+            <p className="text-xs font-bold text-gray-700">Horas extra / remoto</p>
+            <p className="text-xs text-gray-400">{fmtMoney(Math.round(hourlyRate))}/h</p>
+          </div>
+          {extraHours.length===0?(
+            <div className="px-4 py-4 text-center">
+              <p className="text-xs text-gray-400">Sin horas extra este mes</p>
+            </div>
+          ):(
+            <div className="divide-y divide-gray-50">
+              {extraHours.map(h=>{
+                const amt=Math.round(h.hours*hourlyRate*(h.multiplier||1));
+                return(
+                  <div key={h.id} className="flex items-center justify-between px-4 py-2.5">
+                    <div>
+                      <p className="text-xs font-bold text-gray-800">
+                        {h.hours}h {h.description?`— ${h.description}`:'extra'}
+                        {h.multiplier!==1&&<span className="ml-1 text-amber-600 font-bold">×{h.multiplier}</span>}
+                      </p>
+                      <p className="text-xs text-gray-400">{h.date}</p>
+                    </div>
+                    <p className="text-sm font-black text-emerald-600">+{fmtMoney(amt)}</p>
+                  </div>
+                );
+              })}
+              <div className="flex justify-between items-center px-4 py-3 bg-emerald-50">
+                <span className="text-xs font-bold text-emerald-700">Total horas extra</span>
+                <span className="text-sm font-black text-emerald-700">+{fmtMoney(Math.round(extraHrsTotal))}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Balance de minutos + toggle descuento */}
         {(()=>{
           const isOk=netDebt<=0;
