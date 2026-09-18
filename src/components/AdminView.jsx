@@ -180,8 +180,9 @@ function AddEmployeeModal({onClose,onSave}){
 }
 
 // ─── EXTRA HOURS MODAL ────────────────────────────────────────────────────────
-function ExtraHoursModal({employees,onClose,onSave}){
-  const [empId,setEmpId]=useState('');const [date,setDate]=useState(localDateISO());
+function ExtraHoursModal({employees,month,onClose,onSave,empSchedMap}){
+  const defaultDate=month?`${month}-01`:localDateISO();
+  const [empId,setEmpId]=useState('');const [date,setDate]=useState(defaultDate);
   const [hours,setHours]=useState('');const [desc,setDesc]=useState('');
   const [mult,setMult]=useState('1.0');const [saving,setSaving]=useState(false);
   const doSave=async()=>{
@@ -210,6 +211,22 @@ function ExtraHoursModal({employees,onClose,onSave}){
           </div>
         </div>
         <Input label="Descripción" value={desc} onChange={setDesc} placeholder="Remoto, guardia, evento..."/>
+        {empId&&hours&&parseFloat(hours)>0&&(()=>{
+          const emp=employees.find(e=>e.id===empId);
+          if(!emp?.salary)return null;
+          const sched=empSchedMap?.[empId]||{};
+          const scheduledDays=Object.values(sched).filter(s=>s?.active).length||20;
+          const hourlyRate=emp.extra_hour_rate||(emp.salary/(scheduledDays*8));
+          const amt=Math.round(parseFloat(hours||0)*hourlyRate*parseFloat(mult||1));
+          return(
+            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3 flex justify-between items-center">
+              <span className="text-xs text-emerald-600 font-bold">Total a cobrar</span>
+              <span className="text-lg font-black text-emerald-700">
+                {new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(amt)}
+              </span>
+            </div>
+          );
+        })()}
         <button onClick={doSave} disabled={saving||!empId||!hours} className="w-full py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50" style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
           {saving?'Guardando...':'Guardar horas extra'}
         </button>
@@ -1220,11 +1237,40 @@ export default function AdminView({profile,onLogout}){
                         <p className="text-sm font-bold text-gray-900">{h.profiles?.name}</p>
                         <p className="text-xs text-gray-400">{h.date} · {h.hours}hs {h.description&&`— ${h.description}`}</p>
                       </div>
-                      <Badge color={h.multiplier===2?'green':h.multiplier===1.5?'yellow':'gray'}>
-                        x{h.multiplier}
-                      </Badge>
+                      <div className="text-right">
+                        {(()=>{
+                          const emp=employees.find(e=>e.id===h.employee_id);
+                          const sched=empSchedMap?.[h.employee_id]||{};
+                          const scheduledDays=Object.values(sched).filter(s=>s?.active).length||20;
+                          const hourlyRate=emp?.extra_hour_rate||((emp?.salary||0)/(scheduledDays*8));
+                          const amt=Math.round((h.hours||0)*hourlyRate*(h.multiplier||1));
+                          return(<>
+                            <p className="text-sm font-black text-emerald-600">
+                              {new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(amt)}
+                            </p>
+                            <Badge color={h.multiplier===2?'green':h.multiplier===1.5?'yellow':'gray'}>x{h.multiplier}</Badge>
+                          </>);
+                        })()}
+                      </div>
                     </div>
                   ))}
+                  {extraHoursList.length>0&&(()=>{
+                    const total=extraHoursList.reduce((sum,h)=>{
+                      const emp=employees.find(e=>e.id===h.employee_id);
+                      const sched=empSchedMap?.[h.employee_id]||{};
+                      const scheduledDays=Object.values(sched).filter(s=>s?.active).length||20;
+                      const hourlyRate=emp?.extra_hour_rate||((emp?.salary||0)/(scheduledDays*8));
+                      return sum+Math.round((h.hours||0)*hourlyRate*(h.multiplier||1));
+                    },0);
+                    return(
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
+                        <span className="text-xs font-bold text-gray-500">Total horas extra del mes</span>
+                        <span className="text-sm font-black text-emerald-600">
+                          {new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(total)}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -1660,7 +1706,7 @@ export default function AdminView({profile,onLogout}){
       />}
       {showNewRec&&<NewRecordModal employees={employees} defaultDate={filterDate||localDateISO()} onSave={handleNewRec} onClose={()=>setShowNewRec(false)}/>}
       {auditRecId&&<AuditHistory recordId={auditRecId} onClose={()=>setAuditRecId(null)}/>}
-      {showExtraHours&&<ExtraHoursModal employees={employees} onClose={()=>setShowExtraHours(false)} onSave={handleSaveExtra}/>}
+      {showExtraHours&&<ExtraHoursModal employees={employees} month={analysisMonth} empSchedMap={empSchedMap} onClose={()=>setShowExtraHours(false)} onSave={handleSaveExtra}/>}
       {payrollEmp&&(
         <PayrollModal emp={payrollEmp} month={analysisMonth} stats={getStats(payrollEmp.id)}
           extraHours={extraHoursList.filter(h=>h.employee_id===payrollEmp.id)}
