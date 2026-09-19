@@ -513,7 +513,7 @@ body{font-family:Arial,sans-serif;color:#1f2937;padding:2.5rem;max-width:720px;m
 <div class="section">
   <div class="section-title">Haberes</div>
   <div class="row"><span class="lbl">Sueldo básico</span><span class="val sky">$${baseSalary.toLocaleString('es-AR')}</span></div>
-  ${extraHours.length>0?extraHours.map(h=>`<div class="row"><span class="lbl">Hrs extra/remoto — ${h.date} (${h.hours}hs x${h.multiplier})</span><span class="val green">+$${Math.round(h.hours*baseSalary/((stats.scheduled||20)*8)*h.multiplier).toLocaleString('es-AR')}</span></div>`).join(''):''}
+  ${extraHours.length>0?extraHours.map(h=>`<div class="row"><span class="lbl">Hrs extra/remoto — ${h.date} (${h.hours}hs x${h.multiplier})</span><span class="val green">+$${calcExtraAmount(h,emp,schedDays).toLocaleString('es-AR')}</span></div>`).join(''):''}
   ${parseFloat(bonus||0)>0?`<div class="row"><span class="lbl">Bonus / adicional</span><span class="val green">+$${parseFloat(bonus||0).toLocaleString('es-AR')}</span></div>`:''}
 </div>
 
@@ -636,18 +636,7 @@ ${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
             </div>
           );
         })()}
-        {extraHours.length>0&&(
-          <div className="bg-emerald-50 rounded-2xl p-4 space-y-1 text-sm">
-            <p className="font-bold text-emerald-700 mb-2">Horas extra / remoto</p>
-            {extraHours.map(h=>(
-              <div key={h.id} className="flex justify-between text-xs">
-                <span className="text-gray-600">{h.date} — {h.hours}hs {h.description&&`(${h.description})`} x{h.multiplier}</span>
-                <span className="font-bold text-emerald-600">+{fmtMoney(Math.round(h.hours*hourlyRate*h.multiplier))}</span>
-              </div>
-            ))}
-            <div className="flex justify-between pt-1 border-t border-emerald-200"><span className="text-emerald-600">Subtotal extra</span><span className="font-bold text-emerald-600">+{fmtMoney(Math.round(extraHrsTotal))}</span></div>
-          </div>
-        )}
+
         <div>
           <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Bonus / adicional (ARS)</label>
           <input type="number" value={bonus} onChange={e=>setBonus(e.target.value)} min="0"
@@ -1407,8 +1396,7 @@ export default function AdminView({profile,onLogout}){
                       const emp=employees.find(e=>e.id===h.employee_id);
                       const sched=empSchedMap?.[h.employee_id]||{};
                       const scheduledDays=Object.values(sched).filter(s=>s?.active).length||20;
-                      const hourlyRate=emp?.extra_hour_rate||((emp?.salary||0)/(scheduledDays*8));
-                      return sum+Math.round((h.hours||0)*hourlyRate*(h.multiplier||1));
+                      return sum+calcExtraAmount(h,emp,scheduledDays);
                     },0);
                     return(
                       <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
