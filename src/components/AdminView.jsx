@@ -868,7 +868,7 @@ export default function AdminView({profile,onLogout}){
       .order('date',{ascending:false})
       .then(({data})=>{
         setExtraHoursList(data||[]);
-        setExtraHistoryLoaded(false); // mark history as stale when month changes
+        setExtraHistoryLoaded(false);
       }).catch(()=>{});
     // Load payrolls
     supabase.from('payroll').select('*').eq('month',analysisMonth)
@@ -1008,18 +1008,20 @@ export default function AdminView({profile,onLogout}){
   };
 
   // Extra hours
-  const loadExtraHours=async(month)=>{
-    const[y,m]=(month||analysisMonth).split('-').map(Number);
-    const start=`${month||analysisMonth}-01`;
-    const end=`${month||analysisMonth}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
-    const{data}=await supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',start).lte('date',end).order('date',{ascending:false});
+  const loadExtraHours=async(targetMonth)=>{
+    const mn=targetMonth||analysisMonth;
+    const[y,m]=mn.split('-').map(Number);
+    const start=`${mn}-01`;
+    const end=`${mn}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+    const{data}=await supabase.from('extra_hours')
+      .select('*,profiles(name,avatar)')
+      .gte('date',start).lte('date',end)
+      .order('date',{ascending:false});
     setExtraHoursList(data||[]);
-    setExtraHistoryAll(prev=>{
-      // Merge: replace records of this month, keep others
-      const others=prev.filter(h=>!h.date.startsWith(month||analysisMonth));
-      return [...(data||[]),...others].sort((a,b)=>b.date.localeCompare(a.date));
-    });
-    setExtraHistoryLoaded(true);
+    // Reload full history too so Hs Extra tab is in sync
+    supabase.from('extra_hours').select('*,profiles(name,avatar)')
+      .order('date',{ascending:false}).limit(500)
+      .then(({data:all})=>{setExtraHistoryAll(all||[]);setExtraHistoryLoaded(true);});
     return data||[];
   };
 
@@ -1033,10 +1035,7 @@ export default function AdminView({profile,onLogout}){
       const{error}=await supabase.from('extra_hours').insert({employee_id:empId,date,hours,description,multiplier,hourly_rate,approved_by:profile.id});
       if(error)throw error;
     }
-    // Reload the month of the saved record (might differ from analysisMonth)
-    const recordMonth=date.slice(0,7);
-    await loadExtraHours(recordMonth);
-    if(recordMonth!==analysisMonth) await loadExtraHours(analysisMonth);
+    await loadExtraHours(analysisMonth);
     setEditExtraData(null);
     showToast(id?'Registro actualizado':'Horas extra guardadas');
   };
@@ -1684,9 +1683,6 @@ export default function AdminView({profile,onLogout}){
               .order('date',{ascending:false}).limit(500)
               .then(({data})=>{
                 setExtraHistoryAll(data||[]);
-                // Also sync extraHoursList with current month data
-                const monthData=(data||[]).filter(h=>h.date.startsWith(analysisMonth));
-                if(monthData.length>0) setExtraHoursList(monthData);
                 setExtraHistoryLoaded(true);
               });
           }
@@ -1824,7 +1820,6 @@ export default function AdminView({profile,onLogout}){
                                     await supabase.from('extra_hours').delete().eq('id',h.id);
                                     setExtraHistoryAll(p=>p.filter(x=>x.id!==h.id));
                                     setExtraHoursList(p=>p.filter(x=>x.id!==h.id));
-                                    setExtraHistoryLoaded(false);
                                     showToast('Registro eliminado');
                                   }} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
