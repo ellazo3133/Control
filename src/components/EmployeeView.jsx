@@ -907,8 +907,8 @@ export default function EmployeeView({profile,onLogout}) {
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
                         <p className="text-xs font-bold text-gray-700">Horas extra / remoto</p>
-                        {hourlyRate>0&&(
-                          <span className="text-xs text-gray-400">{fmtM(Math.round(hourlyRate))}/h</span>
+                        {baseHourlyRate>0&&(
+                          <span className="text-xs text-gray-400">{fmtM(Math.round(baseHourlyRate))}/h base</span>
                         )}
                       </div>
                       {empExtras.length===0?(
@@ -918,7 +918,7 @@ export default function EmployeeView({profile,onLogout}) {
                       ):(
                         <div className="divide-y divide-gray-50">
                           {empExtras.map(h=>{
-                            const amt = Math.round(h.hours*hourlyRate*h.multiplier);
+                            const amt = calcExtraAmount(h, currentProfile, scheduledDays);
                             return(
                               <div key={h.id} className="px-4 py-3">
                                 <div className="flex items-center justify-between">

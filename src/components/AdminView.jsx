@@ -751,6 +751,7 @@ function EditAdminPermsModal({admin,onClose,onSave}){
 // ─── MAIN ADMIN VIEW ──────────────────────────────────────────────────────────
 export default function AdminView({profile,onLogout}){
   const [tab,setTab]=useState('dashboard');
+  // kept for compatibility
   const [employees,setEmployees]=useState([]);
   const [todayRecs,setTodayRecs]=useState([]);
   const [filteredRecs,setFilteredRecs]=useState([]);
@@ -780,6 +781,7 @@ export default function AdminView({profile,onLogout}){
   const [extraHistoryPeriod,setExtraHistoryPeriod]=useState('month');
   const [extraHistoryAll,setExtraHistoryAll]=useState([]);
   const [extraHistoryLoaded,setExtraHistoryLoaded]=useState(false);
+  const [activeTab,setActiveTab]=useState('dashboard');
   const [showAddEmp,setShowAddEmp]=useState(false);
   const [showAddHol,setShowAddHol]=useState(false);
   const [editHol,setEditHol]=useState(null);
@@ -1011,6 +1013,16 @@ export default function AdminView({profile,onLogout}){
       showToast(id?'Registro actualizado':'Horas extra guardadas');
     }catch(e){showToast(e.message,'error');}
   };
+
+  // Load extra hours history when entering that tab
+  useEffect(()=>{
+    if(tab==='extra_hours'){
+      setExtraHistoryLoaded(false);
+      fetchAllExtraHours()
+        .then(all=>{setExtraHistoryAll(all);setExtraHistoryLoaded(true);})
+        .catch(()=>{setExtraHistoryLoaded(true);});
+    }
+  },[tab]);
 
   // Payroll
   const handleSavePayroll=async(data)=>{
@@ -1647,10 +1659,7 @@ export default function AdminView({profile,onLogout}){
 
         {/* SETTINGS */}
         {tab==='extra_hours'&&(()=>{
-          // Load all extra hours on first visit
-          if(!extraHistoryLoaded){
-            fetchAllExtraHours().then(all=>{setExtraHistoryAll(all);setExtraHistoryLoaded(true);}).catch(()=>{});
-          }
+          // Data loaded via useEffect when tab becomes active
           const fmtM=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
           const now=new Date();
           const thisMonth=now.toISOString().slice(0,7);
@@ -1784,6 +1793,7 @@ export default function AdminView({profile,onLogout}){
                                     try{
                                       await deleteExtraHour(h.id);
                                       await loadExtraHours(analysisMonth);
+                                      fetchAllExtraHours().then(all=>{setExtraHistoryAll(all);setExtraHistoryLoaded(true);}).catch(()=>{});
                                       showToast('Registro eliminado');
                                     }catch(e){showToast(e.message,'error');}
                                   }} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
