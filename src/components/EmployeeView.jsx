@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import logoWhite from '../assets/logo-ellazo-white.png';
+import { calcExtraAmount } from '../lib/extraHours';
 import { usePWA } from '../hooks/usePWA';
 import MonthCalendar from './MonthCalendar';
 import VacacionesView from './VacacionesView';
@@ -900,8 +901,8 @@ export default function EmployeeView({profile,onLogout}) {
                   // Hourly rate: use profile extra_hour_rate or auto from payroll base
                   const baseSal = payroll?.base_salary || currentProfile?.salary || 0;
                   const scheduledDays = payroll?.days_scheduled || 20;
-                  const hourlyRate = currentProfile?.extra_hour_rate || (baseSal/(scheduledDays*8));
-                  const totalExtraAmt = empExtras.reduce((a,h)=>a+(h.hours*hourlyRate*h.multiplier),0);
+                  const baseHourlyRate = currentProfile?.extra_hour_rate || (baseSal/(scheduledDays*8));
+                  const totalExtraAmt = empExtras.reduce((a,h)=>a+calcExtraAmount(h,currentProfile,scheduledDays),0);
                   return(
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">

@@ -9,6 +9,7 @@ import NotificationBell from './NotificationBell';
 import MonthCalendar from './MonthCalendar';
 import AuditHistory from './AuditHistory';
 import { hasPermission, AdminPermissionsEditor, ALL_PERMISSIONS } from './AdminPermissions';
+import { fetchExtraHoursByMonth, fetchAllExtraHours, saveExtraHour, deleteExtraHour, getEffectiveRate, calcExtraAmount } from '../lib/extraHours';
 import logo from '../assets/logo-ellazo.png';
 import logoWhite from '../assets/logo-ellazo-white.png';
 import logoBase64 from '../assets/logoBase64.js';
@@ -434,10 +435,7 @@ function PayrollModal({emp,month,stats,extraHours,empSchedMap,onClose,onSave}){
     return active||stats.scheduled||20;
   })();
   const hourlyRate = emp.extra_hour_rate || (baseSalary/(schedDays*8));
-  const extraHrsTotal=extraHours.reduce((acc,h)=>{
-    const rate=h.hourly_rate||hourlyRate;
-    return acc+(h.hours*rate*(h.multiplier||1));
-  },0);
+  const extraHrsTotal=extraHours.reduce((acc,h)=>acc+calcExtraAmount(h,emp,schedDays),0);
   const [bonus,setBonus]=useState('0');
   const [notes,setNotes]=useState('');
   const [saving,setSaving]=useState(false);
@@ -582,7 +580,7 @@ ${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
           ):(
             <div className="divide-y divide-gray-50">
               {extraHours.map(h=>{
-                const amt=Math.round(h.hours*(h.hourly_rate||hourlyRate)*(h.multiplier||1));
+                const amt=calcExtraAmount(h,emp,schedDays);
                 return(
                   <div key={h.id} className="flex items-center justify-between px-4 py-2.5">
                     <div>
@@ -864,12 +862,8 @@ export default function AdminView({profile,onLogout}){
     const prevMonth=prevDate.toISOString().slice(0,7);
     getRecordsByMonth(prevMonth).then(setPrevMonthRecs).catch(()=>{});
     // Load extra hours for month
-    supabase.from('extra_hours').select('*,profiles(name,avatar)').gte('date',monthStart).lte('date',monthEnd)
-      .order('date',{ascending:false})
-      .then(({data})=>{
-        setExtraHoursList(data||[]);
-        setExtraHistoryLoaded(false);
-      }).catch(()=>{});
+    fetchExtraHoursByMonth(analysisMonth).then(setExtraHoursList).catch(()=>{});
+    setExtraHistoryLoaded(false);
     // Load payrolls
     supabase.from('payroll').select('*').eq('month',analysisMonth)
       .then(({data})=>setPayrolls(data||[])).catch(()=>{});
@@ -1008,36 +1002,25 @@ export default function AdminView({profile,onLogout}){
   };
 
   // Extra hours
-  const loadExtraHours=async(targetMonth)=>{
-    const mn=targetMonth||analysisMonth;
-    const[y,m]=mn.split('-').map(Number);
-    const start=`${mn}-01`;
-    const end=`${mn}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
-    const{data}=await supabase.from('extra_hours')
-      .select('*,profiles(name,avatar)')
-      .gte('date',start).lte('date',end)
-      .order('date',{ascending:false});
-    setExtraHoursList(data||[]);
-    // Reload full history too so Hs Extra tab is in sync
-    supabase.from('extra_hours').select('*,profiles(name,avatar)')
-      .order('date',{ascending:false}).limit(500)
-      .then(({data:all})=>{setExtraHistoryAll(all||[]);setExtraHistoryLoaded(true);});
-    return data||[];
+  const loadExtraHours=async(mn)=>{
+    try{
+      const month=mn||analysisMonth;
+      const byMonth=await fetchExtraHoursByMonth(month);
+      setExtraHoursList(byMonth);
+      // Also refresh full history
+      const all=await fetchAllExtraHours();
+      setExtraHistoryAll(all);
+      setExtraHistoryLoaded(true);
+    }catch(e){console.error('loadExtraHours error:',e);}
   };
 
   const handleSaveExtra=async({id,empId,date,hours,description,multiplier,hourly_rate})=>{
-    if(id){
-      // Update existing
-      const{error}=await supabase.from('extra_hours').update({date,hours,description,multiplier,hourly_rate}).eq('id',id);
-      if(error)throw error;
-    } else {
-      // Insert new
-      const{error}=await supabase.from('extra_hours').insert({employee_id:empId,date,hours,description,multiplier,hourly_rate,approved_by:profile.id});
-      if(error)throw error;
-    }
-    await loadExtraHours(analysisMonth);
-    setEditExtraData(null);
-    showToast(id?'Registro actualizado':'Horas extra guardadas');
+    try{
+      await saveExtraHour({id,empId,date,hours,description,multiplier,hourly_rate,approved_by:profile.id});
+      await loadExtraHours(analysisMonth);
+      setEditExtraData(null);
+      showToast(id?'Registro actualizado':'Horas extra guardadas');
+    }catch(e){showToast(e.message,'error');}
   };
 
   // Payroll
@@ -1405,11 +1388,10 @@ export default function AdminView({profile,onLogout}){
                       </div>
                       <div className="text-right">
                         {(()=>{
-                          const emp=employees.find(e=>e.id===h.employee_id);
+                          const emp=employees.find(e=>e.id===h.employee_id)||h.profiles;
                           const sched=empSchedMap?.[h.employee_id]||{};
                           const scheduledDays=Object.values(sched).filter(s=>s?.active).length||20;
-                          const hourlyRate=h.hourly_rate||emp?.extra_hour_rate||((emp?.salary||0)/(scheduledDays*8));
-                          const amt=Math.round((h.hours||0)*hourlyRate*(h.multiplier||1));
+                          const amt=calcExtraAmount(h,emp,scheduledDays);
                           return(<>
                             <p className="text-sm font-black text-emerald-600">
                               {new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(amt)}
@@ -1449,8 +1431,8 @@ export default function AdminView({profile,onLogout}){
                 const empExtras=extraHoursList.filter(h=>h.employee_id===emp.id);
                 const deductPct=stats.scheduled>0?Math.round((stats.absent/stats.scheduled)*100):0;
                 const deductAmt=Math.round((emp.salary||0)*(deductPct/100));
-                const hourlyRateEmp=emp.extra_hour_rate||((emp.salary||0)/((stats.scheduled||20)*8));
-                const extraAmt=empExtras.reduce((acc,h)=>acc+Math.round(h.hours*(h.hourly_rate||hourlyRateEmp)*(h.multiplier||1)),0);
+                const schedDaysEmp=Object.values(empSchedMap?.[emp.id]||{}).filter(s=>s?.active).length||stats.scheduled||20;
+                const extraAmt=empExtras.reduce((acc,h)=>acc+calcExtraAmount(h,emp,schedDaysEmp),0);
                 const estimated=(emp.salary||0)-deductAmt+extraAmt; // hourlyRateEmp already applied above
                 return(
                   <div key={emp.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
@@ -1679,12 +1661,7 @@ export default function AdminView({profile,onLogout}){
         {tab==='extra_hours'&&(()=>{
           // Load all extra hours on first visit
           if(!extraHistoryLoaded){
-            supabase.from('extra_hours').select('*,profiles(name,avatar)')
-              .order('date',{ascending:false}).limit(500)
-              .then(({data})=>{
-                setExtraHistoryAll(data||[]);
-                setExtraHistoryLoaded(true);
-              });
+            fetchAllExtraHours().then(all=>{setExtraHistoryAll(all);setExtraHistoryLoaded(true);}).catch(()=>{});
           }
           const fmtM=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
           const now=new Date();
@@ -1778,8 +1755,7 @@ export default function AdminView({profile,onLogout}){
                       const emp=employees.find(e=>e.id===empId);
                       const sched=empSchedMap?.[empId]||{};
                       const days=Object.values(sched).filter(s=>s?.active).length||20;
-                      const baseRate=emp?.extra_hour_rate||((emp?.salary||0)/(days*8));
-                      const empTotal=hrs.reduce((a,h)=>a+Math.round((h.hours||0)*(h.hourly_rate||baseRate)*(h.multiplier||1)),0);
+                      const empTotal=hrs.reduce((a,h)=>a+calcExtraAmount(h,emp,days),0);
                       const empHours=hrs.reduce((a,h)=>a+(h.hours||0),0);
                       return(
                         <div key={empId} className="border-b border-gray-50 last:border-0">
@@ -1817,10 +1793,11 @@ export default function AdminView({profile,onLogout}){
                                   </button>
                                   <button onClick={async()=>{
                                     if(!window.confirm('¿Eliminar este registro?'))return;
-                                    await supabase.from('extra_hours').delete().eq('id',h.id);
-                                    setExtraHistoryAll(p=>p.filter(x=>x.id!==h.id));
-                                    setExtraHoursList(p=>p.filter(x=>x.id!==h.id));
-                                    showToast('Registro eliminado');
+                                    try{
+                                      await deleteExtraHour(h.id);
+                                      await loadExtraHours(analysisMonth);
+                                      showToast('Registro eliminado');
+                                    }catch(e){showToast(e.message,'error');}
                                   }} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                   </button>
