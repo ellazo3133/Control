@@ -712,6 +712,15 @@ export default function AdminView({profile,onLogout}){
     // Load payrolls
     supabase.from('payroll').select('*').eq('month',analysisMonth)
       .then(({data})=>setPayrolls(data||[])).catch(()=>{});
+    // Load extra hours for month (use explicit FK to avoid ambiguity)
+    const [ey,em]=analysisMonth.split('-').map(Number);
+    const eStart=`${analysisMonth}-01`;
+    const eEnd=`${analysisMonth}-${String(new Date(ey,em,0).getDate()).padStart(2,'0')}`;
+    supabase.from('extra_hours')
+      .select('*, employee:profiles!extra_hours_employee_id_fkey(id,name,avatar,salary,extra_hour_rate)')
+      .gte('date',eStart).lte('date',eEnd)
+      .order('date',{ascending:false})
+      .then(({data})=>setExtraHoursList(data||[])).catch(()=>{});
   },[analysisMonth]);
 
   const presentToday=todayRecs.filter(r=>r.check_in).length;
@@ -1210,19 +1219,6 @@ export default function AdminView({profile,onLogout}){
               </div>
             </div>
 
-            {/* Horas extra del mes */}
-            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-gray-800 text-sm">Horas extra / remoto — {analysisMonth}</h3>
-              </div>
-              <HorasExtra
-                employees={employees}
-                empSchedMap={empSchedMap}
-                month={analysisMonth}
-                embedded={true}
-              />
-            </div>
-
             {/* Per-employee payroll cards */}
             <div className="grid gap-4 md:grid-cols-2">
               {employees.map(emp=>{
@@ -1232,7 +1228,7 @@ export default function AdminView({profile,onLogout}){
                 const deductPct=stats.scheduled>0?Math.round((stats.absent/stats.scheduled)*100):0;
                 const deductAmt=Math.round((emp.salary||0)*(deductPct/100));
                 const schedDaysEmp=Object.values(empSchedMap?.[emp.id]||{}).filter(s=>s?.active).length||stats.scheduled||20;
-                const extraAmt=empExtras.reduce((acc,h)=>acc+calcMonto(h,emp,schedDaysEmp),0);
+                const extraAmt=empExtras.reduce((acc,h)=>acc+calcMonto(h,h.employee||emp,schedDaysEmp),0);
                 const estimated=(emp.salary||0)-deductAmt+extraAmt; // hourlyRateEmp already applied above
                 return(
                   <div key={emp.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">

@@ -175,25 +175,9 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
   const [filterEmp, setFilterEmp] = useState('all');
   const [filterPeriod, setFilterPeriod] = useState(embedded ? 'month' : 'month');
 
-  const [debugMsg, setDebugMsg] = useState('');
-
   const cargar = useCallback(async () => {
     setLoading(true);
-    setDebugMsg('Cargando...');
     try {
-      // Test auth first
-      const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id || 'NO USER';
-
-      // Test direct query without RLS filters
-      const { data: all, error: e1 } = await supabase
-        .from('extra_hours')
-        .select('id, employee_id, date, hours')
-        .order('date', { ascending: false })
-        .limit(5);
-
-      setDebugMsg(`uid:${userId.slice(0,8)} | filas:${all?.length ?? 'err'} | error:${e1?.message || 'ninguno'}`);
-
       let q = supabase.from('extra_hours')
         .select('*, employee:profiles!extra_hours_employee_id_fkey(id, name, avatar, salary, extra_hour_rate)')
         .order('date', { ascending: false });
@@ -212,9 +196,7 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
       const { data, error } = await q;
       if (error) throw error;
       setRegistros(data || []);
-      setDebugMsg(`uid:${userId.slice(0,8)} | filas:${data?.length ?? 0} | ok`);
     } catch (e) {
-      setDebugMsg(`ERROR: ${e.message}`);
       console.error('HorasExtra.cargar:', e);
     }
     setLoading(false);
@@ -291,13 +273,6 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
               </button>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Debug banner - remove after fix */}
-      {debugMsg && (
-        <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-2">
-          <p className="text-xs font-mono text-orange-700 break-all">{debugMsg}</p>
         </div>
       )}
 
