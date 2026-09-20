@@ -294,7 +294,17 @@ function PayrollModal({emp,month,stats,extraHours,empSchedMap,onClose,onSave}){
     const active=Object.values(s).filter(x=>x?.active).length;
     return active||stats.scheduled||20;
   })();
-  const hourlyRate = emp.extra_hour_rate || (baseSalary/(schedDays*8));
+  // Prioridad: extra_hour_rate fijo > salary/monthly_hours > salary/días/8
+  const hourlyRate = emp.extra_hour_rate > 0
+    ? emp.extra_hour_rate
+    : emp.monthly_hours > 0
+      ? baseSalary / emp.monthly_hours
+      : baseSalary / (schedDays * 8);
+  const hourlyRateLabel = emp.extra_hour_rate > 0
+    ? 'configurado'
+    : emp.monthly_hours > 0
+      ? `${baseSalary.toLocaleString('es-AR')} ÷ ${emp.monthly_hours}h`
+      : `${baseSalary.toLocaleString('es-AR')} ÷ ${schedDays}días ÷ 8h`;
   const extraHrsTotal=extraHours.reduce((acc,h)=>acc+calcMonto(h,emp,schedDays),0);
   const [bonus,setBonus]=useState('0');
   const [notes,setNotes]=useState('');
@@ -417,7 +427,7 @@ ${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
       <div className="space-y-4">
         <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-gray-500">Sueldo base</span><span className="font-bold">{fmtMoney(baseSalary)}</span></div>
-          <div className="flex justify-between"><span className="text-gray-500">Valor hora {emp.extra_hour_rate?'(configurado)':'(automático)'}</span><span className="font-bold text-sky-600">{fmtMoney(Math.round(hourlyRate))}/h</span></div>
+          <div className="flex justify-between"><span className="text-gray-500">Valor hora ({emp.extra_hour_rate>0?'fijo':emp.monthly_hours>0?`${emp.monthly_hours}h/mes`:'auto'})</span><span className="font-bold text-sky-600">{fmtMoney(Math.round(hourlyRate))}/h</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Días programados</span><span className="font-bold">{stats.scheduled}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Días trabajados</span><span className="font-bold text-emerald-600">{stats.present}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Ausentes injust.</span><span className="font-bold text-red-500">{stats.absent}</span></div>

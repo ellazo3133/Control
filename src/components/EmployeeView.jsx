@@ -901,7 +901,11 @@ export default function EmployeeView({profile,onLogout}) {
                   // Hourly rate: use profile extra_hour_rate or auto from payroll base
                   const baseSal = payroll?.base_salary || currentProfile?.salary || 0;
                   const scheduledDays = payroll?.days_scheduled || 20;
-                  const baseHourlyRate = currentProfile?.extra_hour_rate || (baseSal/(scheduledDays*8));
+                  const baseHourlyRate = currentProfile?.extra_hour_rate > 0
+                    ? currentProfile.extra_hour_rate
+                    : currentProfile?.monthly_hours > 0
+                      ? baseSal / currentProfile.monthly_hours
+                      : baseSal / (scheduledDays * 8);
                   const totalExtraAmt = empExtras.reduce((a,h)=>a+calcMonto(h,currentProfile,scheduledDays),0);
                   return(
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">

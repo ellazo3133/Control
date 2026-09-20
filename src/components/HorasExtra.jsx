@@ -7,11 +7,14 @@ const fmtDate = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('es-AR', {
 
 // Calcula el monto de un registro: usa hourly_rate propio, luego extra_hour_rate del perfil, luego automático
 export function calcRate(h, emp, scheduledDays) {
+  // Prioridad: 1) valor hora del registro, 2) extra_hour_rate del perfil, 3) salary/monthly_hours, 4) salary/días/8
   if (h?.hourly_rate > 0) return h.hourly_rate;
   if (emp?.extra_hour_rate > 0) return emp.extra_hour_rate;
   const sal = emp?.salary || 0;
+  if (sal <= 0) return 0;
+  if (emp?.monthly_hours > 0) return sal / emp.monthly_hours;
   const days = scheduledDays || 20;
-  return sal > 0 ? sal / (days * 8) : 0;
+  return sal / (days * 8);
 }
 export function calcMonto(h, emp, scheduledDays) {
   return Math.round((h?.hours || 0) * calcRate(h, emp, scheduledDays) * (h?.multiplier || 1));
@@ -32,6 +35,7 @@ function ModalHoraExtra({ employees, empSchedMap, month, editData, onClose, onDo
   const emp = employees.find(e => e.id === empId);
   const schedDays = empSchedMap && empId ? (Object.values(empSchedMap[empId] || {}).filter(s => s?.active).length || 20) : 20;
   const autoRate = emp ? calcRate({}, emp, schedDays) : 0;
+  const autoRateLabel = emp?.monthly_hours > 0 ? `${emp.salary?.toLocaleString('es-AR')}÷${emp.monthly_hours}h` : emp?.extra_hour_rate > 0 ? 'configurado' : `÷días÷8`;
   const effectiveRate = customRate && parseFloat(customRate) > 0 ? parseFloat(customRate) : autoRate;
   const preview = effectiveRate > 0 && hours ? Math.round(parseFloat(hours) * effectiveRate * parseFloat(mult)) : 0;
 
@@ -126,8 +130,10 @@ function ModalHoraExtra({ employees, empSchedMap, month, editData, onClose, onDo
             </div>
             <p className="text-xs text-gray-400 mt-1">
               {customRate && parseFloat(customRate) > 0
-                ? `Valor personalizado`
-                : autoRate > 0 ? `Auto: ${fmt(Math.round(autoRate))}/h (sueldo ÷ días ÷ 8)` : 'Sin sueldo configurado'}
+                ? `Valor fijo para este registro: ${fmt(parseFloat(customRate))}/h`
+                : autoRate > 0
+                  ? `Auto: ${fmt(Math.round(autoRate))}/h (${autoRateLabel})`
+                  : 'Sin sueldo configurado'}
             </p>
           </div>
         )}
