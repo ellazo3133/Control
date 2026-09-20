@@ -772,8 +772,12 @@ export default function AdminView({profile,onLogout}){
 
   // Edit salary
   const saveSalary=async()=>{
-    await supabase.from('profiles').update({salary:parseFloat(editSalaryVal)||0}).eq('id',editSalaryEmp.id);
-    await loadAll();setEditSalaryEmp(null);showToast('Sueldo actualizado');
+    const updates={salary:parseFloat(editSalaryVal)||0};
+    if(editMonthlyHours!=='') updates.monthly_hours=parseFloat(editMonthlyHours)||null;
+    if(editExtraRateVal!=='') updates.extra_hour_rate=parseFloat(editExtraRateVal)||null;
+    await supabase.from('profiles').update(updates).eq('id',editSalaryEmp.id);
+    setEmployees(p=>p.map(e=>e.id===editSalaryEmp.id?{...e,...updates}:e));
+    setEditSalaryEmp(null);showToast('Sueldo actualizado');
   };
 
   // Edit employee data
@@ -1145,7 +1149,7 @@ export default function AdminView({profile,onLogout}){
                       <button onClick={()=>handleDeleteEmp(emp)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors" title="Eliminar">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                       </button>
-                      <button onClick={()=>{setEditSalaryEmp(emp);setEditSalaryVal(emp.salary||'');}} className="p-2 text-gray-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors" title="Editar sueldo">
+                      <button onClick={()=>{setEditSalaryEmp(emp);setEditSalaryVal(emp.salary||'');setEditMonthlyHours(emp.monthly_hours||'');setEditExtraRateVal(emp.extra_hour_rate||'');}} className="p-2 text-gray-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors" title="Editar sueldo">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                       </button>
                     </div>
@@ -1620,21 +1624,25 @@ export default function AdminView({profile,onLogout}){
         <Modal open={true} onClose={()=>setEditSalaryEmp(null)} title={`Sueldo — ${editSalaryEmp.name}`}>
           <div className="space-y-4">
             <Input label="Sueldo base mensual (ARS)" type="number" value={editSalaryVal} onChange={setEditSalaryVal} placeholder="Ej: 500000"/>
-            {(()=>{
-              const s=getStats(editSalaryEmp.id);
-              const autoRate=editSalaryEmp.salary>0&&s.scheduled>0?Math.round(editSalaryEmp.salary/(s.scheduled*8)):0;
-              return(
-                <div className="space-y-2">
-                  <Input label="Valor hora extra (ARS) — opcional" type="number" value={editExtraRateVal} onChange={setEditExtraRateVal} placeholder={autoRate>0?`Auto: ${fmtMoney(autoRate)}/h`:'Ej: 3500'}/>
-                  <p className="text-xs text-gray-400">
-                    {editExtraRateVal?`Valor fijo: ${fmtMoney(parseFloat(editExtraRateVal)||0)}/h`
-                      :autoRate>0?`Se calcula automáticamente: ${fmtMoney(autoRate)}/h (sueldo ÷ días ÷ 8hs)`
-                      :'Ingresá el sueldo para ver el cálculo automático'}
-                  </p>
-                </div>
-              );
-            })()}
-            <p className="text-xs text-gray-400">Este valor se usa para calcular descuentos por faltas y liquidación mensual.</p>
+            <div className="space-y-2">
+              <Input label="Horas mensuales" type="number" value={editMonthlyHours} onChange={setEditMonthlyHours} placeholder="Ej: 160, 180, 200"/>
+              <p className="text-xs text-gray-400">
+                {parseFloat(editMonthlyHours)>0&&parseFloat(editSalaryVal)>0
+                  ?<span className="text-sky-600 font-bold">Valor hora: {fmtMoney(Math.round(parseFloat(editSalaryVal)/parseFloat(editMonthlyHours)))}/h ({parseFloat(editSalaryVal).toLocaleString('es-AR')} ÷ {editMonthlyHours}h)</span>
+                  :'Cuántas horas trabaja por mes — define el valor hora base'}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Input label="Valor hora extra fijo — opcional" type="number" value={editExtraRateVal} onChange={setEditExtraRateVal}
+                placeholder={parseFloat(editMonthlyHours)>0&&parseFloat(editSalaryVal)>0
+                  ?`Auto: ${fmtMoney(Math.round(parseFloat(editSalaryVal)/parseFloat(editMonthlyHours)))}/h`
+                  :'Ej: 12000'}/>
+              <p className="text-xs text-gray-400">
+                {parseFloat(editExtraRateVal)>0
+                  ?`Valor fijo para todas las horas extra: ${fmtMoney(parseFloat(editExtraRateVal))}/h`
+                  :'Dejalo vacío para calcular automáticamente desde las horas mensuales'}
+              </p>
+            </div>
             <button onClick={saveSalary} className="w-full py-3 rounded-2xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>Guardar sueldo</button>
           </div>
         </Modal>
