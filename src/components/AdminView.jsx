@@ -657,6 +657,8 @@ export default function AdminView({profile,onLogout}){
   const [editEmpSched,setEditEmpSched]=useState({});
   const [editSalaryEmp,setEditSalaryEmp]=useState(null);
   const [editSalaryVal,setEditSalaryVal]=useState('');
+  const [editExtraRateVal,setEditExtraRateVal]=useState('');
+  const [editMonthlyHours,setEditMonthlyHours]=useState('');
   const [editEmpData,setEditEmpData]=useState(null); // {emp, form}
   const [viewEmpId,setViewEmpId]=useState(null);
   const [viewEmpMonth,setViewEmpMonth]=useState(new Date().toISOString().slice(0,7));
