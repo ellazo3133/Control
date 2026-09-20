@@ -175,21 +175,34 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
   const [filterEmp, setFilterEmp] = useState('all');
   const [filterPeriod, setFilterPeriod] = useState(embedded ? 'month' : 'month');
 
+  const [debugMsg, setDebugMsg] = useState('');
+
   const cargar = useCallback(async () => {
     setLoading(true);
+    setDebugMsg('Cargando...');
     try {
+      // Test auth first
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id || 'NO USER';
+
+      // Test direct query without RLS filters
+      const { data: all, error: e1 } = await supabase
+        .from('extra_hours')
+        .select('id, employee_id, date, hours')
+        .limit(5);
+
+      setDebugMsg(`uid:${userId.slice(0,8)} | filas:${all?.length ?? 'err'} | error:${e1?.message || 'ninguno'}`);
+
       let q = supabase.from('extra_hours')
         .select('*, profiles(id, name, avatar, salary, extra_hour_rate)')
         .order('date', { ascending: false });
 
       if (embedded) {
-        // En tab Sueldos: solo el mes actual
         const [y, m] = month.split('-').map(Number);
         const start = `${month}-01`;
         const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
         q = q.gte('date', start).lte('date', end);
       } else {
-        // En tab Hs Extra: últimos 12 meses
         const desde = new Date();
         desde.setFullYear(desde.getFullYear() - 1);
         q = q.gte('date', desde.toISOString().split('T')[0]);
@@ -198,7 +211,11 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
       const { data, error } = await q;
       if (error) throw error;
       setRegistros(data || []);
-    } catch (e) { console.error('HorasExtra.cargar:', e); }
+      setDebugMsg(`uid:${userId.slice(0,8)} | filas:${data?.length ?? 0} | ok`);
+    } catch (e) {
+      setDebugMsg(`ERROR: ${e.message}`);
+      console.error('HorasExtra.cargar:', e);
+    }
     setLoading(false);
   }, [month, embedded]);
 
@@ -273,6 +290,13 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Debug banner - remove after fix */}
+      {debugMsg && (
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-2">
+          <p className="text-xs font-mono text-orange-700 break-all">{debugMsg}</p>
         </div>
       )}
 
