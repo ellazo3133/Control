@@ -189,12 +189,13 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
       const { data: all, error: e1 } = await supabase
         .from('extra_hours')
         .select('id, employee_id, date, hours')
+        .order('date', { ascending: false })
         .limit(5);
 
       setDebugMsg(`uid:${userId.slice(0,8)} | filas:${all?.length ?? 'err'} | error:${e1?.message || 'ninguno'}`);
 
       let q = supabase.from('extra_hours')
-        .select('*, profiles(id, name, avatar, salary, extra_hour_rate)')
+        .select('*, employee:profiles!extra_hours_employee_id_fkey(id, name, avatar, salary, extra_hour_rate)')
         .order('date', { ascending: false });
 
       if (embedded) {
@@ -245,7 +246,7 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
   // Totales
   const totalHoras = filtrados.reduce((a, h) => a + (h.hours || 0), 0);
   const totalMonto = filtrados.reduce((a, h) => {
-    const emp = employees.find(e => e.id === h.employee_id) || h.profiles;
+    const emp = employees.find(e => e.id === h.employee_id) || h.employee;
     const days = empSchedMap ? (Object.values(empSchedMap[h.employee_id] || {}).filter(s => s?.active).length || 20) : 20;
     return a + calcMonto(h, emp, days);
   }, 0);
@@ -341,7 +342,7 @@ export default function HorasExtra({ employees, empSchedMap, month, embedded }) 
       ) : (
         <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden">
           {Object.entries(porEmpleado).map(([empId, hrs]) => {
-            const emp = employees.find(e => e.id === empId) || hrs[0]?.profiles;
+            const emp = employees.find(e => e.id === empId) || hrs[0]?.employee;
             const days = empSchedMap ? (Object.values(empSchedMap[empId] || {}).filter(s => s?.active).length || 20) : 20;
             const subtotal = hrs.reduce((a, h) => a + calcMonto(h, emp, days), 0);
             const totalH = hrs.reduce((a, h) => a + (h.hours || 0), 0);
