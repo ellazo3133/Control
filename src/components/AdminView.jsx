@@ -9,7 +9,7 @@ import NotificationBell from './NotificationBell';
 import MonthCalendar from './MonthCalendar';
 import AuditHistory from './AuditHistory';
 import { hasPermission, AdminPermissionsEditor, ALL_PERMISSIONS } from './AdminPermissions';
-import { fetchExtraHoursByMonth, fetchAllExtraHours, saveExtraHour, deleteExtraHour, getEffectiveRate, calcExtraAmount } from '../lib/extraHours';
+import HorasExtra, { calcMonto, calcRate } from './HorasExtra';
 import logo from '../assets/logo-ellazo.png';
 import logoWhite from '../assets/logo-ellazo-white.png';
 import logoBase64 from '../assets/logoBase64.js';
@@ -181,146 +181,6 @@ function AddEmployeeModal({onClose,onSave}){
 }
 
 // ─── EXTRA HOURS MODAL ────────────────────────────────────────────────────────
-function ExtraHoursModal({employees,month,onClose,onSave,empSchedMap,editData}){
-  // editData: existing record to edit, null = new
-  const defaultDate=month?`${month}-01`:localDateISO();
-  const [empId,setEmpId]=useState(editData?.employee_id||'');
-  const [date,setDate]=useState(editData?.date||defaultDate);
-  const [hours,setHours]=useState(editData?.hours?.toString()||'');
-  const [desc,setDesc]=useState(editData?.description||'');
-  const [mult,setMult]=useState(editData?.multiplier?.toString()||'1.0');
-  const [customRate,setCustomRate]=useState(editData?.hourly_rate?.toString()||'');
-  const [saving,setSaving]=useState(false);
-  const isEdit=!!editData;
-
-  // Calculate auto rate for selected employee
-  const getAutoRate=(id)=>{
-    const emp=employees.find(e=>e.id===id);
-    if(!emp?.salary)return 0;
-    const sched=empSchedMap?.[id]||{};
-    const days=Object.values(sched).filter(s=>s?.active).length||20;
-    return emp.extra_hour_rate||(emp.salary/(days*8));
-  };
-  const autoRate=getAutoRate(empId);
-  const effectiveRate=customRate&&parseFloat(customRate)>0?parseFloat(customRate):autoRate;
-  const amt=effectiveRate&&hours?Math.round(parseFloat(hours||0)*effectiveRate*parseFloat(mult||1)):0;
-  const fmtM=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
-
-  const doSave=async()=>{
-    if(!empId||!hours)return;
-    setSaving(true);
-    await onSave({
-      id:editData?.id,
-      empId,date,
-      hours:parseFloat(hours),
-      description:desc,
-      multiplier:parseFloat(mult),
-      hourly_rate:customRate&&parseFloat(customRate)>0?parseFloat(customRate):null,
-    });
-    setSaving(false);onClose();
-  };
-
-  return(
-    <Modal open={true} onClose={onClose} title={isEdit?'Editar hora extra':'Agregar horas extra'}>
-      <div className="space-y-4">
-
-        {/* Empleado — solo en nuevo */}
-        {!isEdit&&(
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Empleado</label>
-            <select value={empId} onChange={e=>setEmpId(e.target.value)} className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none bg-gray-50">
-              <option value="">Seleccioná...</option>
-              {employees.filter(e=>e.role==='employee'||e.role==='admin').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          </div>
-        )}
-        {isEdit&&(
-          <div className="bg-sky-50 rounded-2xl px-4 py-3">
-            <p className="text-xs font-bold text-sky-700">{employees.find(e=>e.id===empId)?.name}</p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Fecha</label>
-            <input type="date" value={date} onChange={e=>setDate(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Horas</label>
-            <input type="number" value={hours} onChange={e=>setHours(e.target.value)}
-              placeholder="Ej: 4.5" min="0.5" step="0.5"
-              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
-          </div>
-        </div>
-
-        {/* Multiplicador */}
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Tipo</label>
-          <div className="grid grid-cols-3 gap-2">
-            {[['1.0','Normal','bg-gray-100 text-gray-700'],['1.5','50% extra','bg-amber-100 text-amber-700'],['2.0','Doble','bg-emerald-100 text-emerald-700']].map(([v,l,cls])=>(
-              <button key={v} onClick={()=>setMult(v)} className={`py-2 rounded-xl text-xs font-bold transition-all ${mult===v?cls+' ring-2 ring-offset-1 ring-sky-400':cls+' opacity-60'}`}>{l}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Valor hora — clave */}
-        {empId&&(
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
-              Valor hora extra
-            </label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold">$</span>
-              <input type="number" value={customRate} onChange={e=>setCustomRate(e.target.value)}
-                placeholder={autoRate>0?Math.round(autoRate).toString():'Valor por hora'}
-                className="w-full pl-8 pr-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
-            </div>
-            <p className="text-xs text-gray-400 mt-1">
-              {customRate&&parseFloat(customRate)>0
-                ?`Valor personalizado: ${fmtM(parseFloat(customRate))}/h`
-                :autoRate>0
-                  ?`Automático: ${fmtM(Math.round(autoRate))}/h (sueldo ÷ días programados ÷ 8)`
-                  :'Configurá el sueldo del empleado para el cálculo automático'}
-            </p>
-          </div>
-        )}
-
-        <div>
-          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Descripción</label>
-          <input value={desc} onChange={e=>setDesc(e.target.value)}
-            placeholder="Remoto, guardia, evento, reunión..."
-            className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-gray-50"/>
-        </div>
-
-        {/* Preview del monto */}
-        {empId&&hours&&parseFloat(hours)>0&&effectiveRate>0&&(
-          <div className="bg-emerald-50 border border-emerald-100 rounded-2xl px-4 py-3">
-            <div className="flex justify-between items-center">
-              <div className="text-xs text-emerald-600">
-                <p className="font-bold">Total a cobrar</p>
-                <p className="text-emerald-500 mt-0.5">
-                  {hours}h × {fmtM(Math.round(effectiveRate))}/h
-                  {parseFloat(mult)!==1&&` × ${mult}`}
-                </p>
-              </div>
-              <p className="text-xl font-black text-emerald-700">{fmtM(amt)}</p>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={onClose} className="py-3 rounded-2xl text-sm font-bold border-2 border-gray-200 text-gray-500">Cancelar</button>
-          <button onClick={doSave} disabled={saving||!empId||!hours}
-            className="py-3 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
-            style={{background:'linear-gradient(135deg,#0ea5e9,#6366f1)'}}>
-            {saving?'Guardando...':isEdit?'Guardar cambios':'Agregar'}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
 
 // ─── NEW RECORD MODAL (carga manual admin) ────────────────────────────────────
 function NewRecordModal({employees,defaultDate,onSave,onClose}){
@@ -435,7 +295,7 @@ function PayrollModal({emp,month,stats,extraHours,empSchedMap,onClose,onSave}){
     return active||stats.scheduled||20;
   })();
   const hourlyRate = emp.extra_hour_rate || (baseSalary/(schedDays*8));
-  const extraHrsTotal=extraHours.reduce((acc,h)=>acc+calcExtraAmount(h,emp,schedDays),0);
+  const extraHrsTotal=extraHours.reduce((acc,h)=>acc+calcMonto(h,emp,schedDays),0);
   const [bonus,setBonus]=useState('0');
   const [notes,setNotes]=useState('');
   const [saving,setSaving]=useState(false);
@@ -513,7 +373,7 @@ body{font-family:Arial,sans-serif;color:#1f2937;padding:2.5rem;max-width:720px;m
 <div class="section">
   <div class="section-title">Haberes</div>
   <div class="row"><span class="lbl">Sueldo básico</span><span class="val sky">$${baseSalary.toLocaleString('es-AR')}</span></div>
-  ${extraHours.length>0?extraHours.map(h=>`<div class="row"><span class="lbl">Hrs extra/remoto — ${h.date} (${h.hours}hs x${h.multiplier})</span><span class="val green">+$${calcExtraAmount(h,emp,schedDays).toLocaleString('es-AR')}</span></div>`).join(''):''}
+  ${extraHours.length>0?extraHours.map(h=>`<div class="row"><span class="lbl">Hrs extra/remoto — ${h.date} (${h.hours}hs x${h.multiplier})</span><span class="val green">+$${calcMonto(h,emp,schedDays).toLocaleString('es-AR')}</span></div>`).join(''):''}
   ${parseFloat(bonus||0)>0?`<div class="row"><span class="lbl">Bonus / adicional</span><span class="val green">+$${parseFloat(bonus||0).toLocaleString('es-AR')}</span></div>`:''}
 </div>
 
@@ -580,7 +440,7 @@ ${notes?`<div class="notes-box">📝 ${notes}</div>`:''}
           ):(
             <div className="divide-y divide-gray-50">
               {extraHours.map(h=>{
-                const amt=calcExtraAmount(h,emp,schedDays);
+                const amt=calcMonto(h,emp,schedDays);
                 return(
                   <div key={h.id} className="flex items-center justify-between px-4 py-2.5">
                     <div>
@@ -777,16 +637,12 @@ export default function AdminView({profile,onLogout}){
   const [showNewRec,setShowNewRec]=useState(false);
   const [showNewAdmin,setShowNewAdmin]=useState(false);
   const [editAdminPerms,setEditAdminPerms]=useState(null);
-  const [extraHistoryEmp,setExtraHistoryEmp]=useState('all');
-  const [extraHistoryPeriod,setExtraHistoryPeriod]=useState('month');
-  const [extraHistoryAll,setExtraHistoryAll]=useState([]);
-  const [extraHistoryLoaded,setExtraHistoryLoaded]=useState(false);
+
   const [activeTab,setActiveTab]=useState('dashboard');
   const [showAddEmp,setShowAddEmp]=useState(false);
   const [showAddHol,setShowAddHol]=useState(false);
   const [editHol,setEditHol]=useState(null);
-  const [showExtraHours,setShowExtraHours]=useState(false);
-  const [editExtraData,setEditExtraData]=useState(null);
+
   const [editEmpId,setEditEmpId]=useState(null);
   const [editEmpSched,setEditEmpSched]=useState({});
   const [editSalaryEmp,setEditSalaryEmp]=useState(null);
@@ -852,9 +708,7 @@ export default function AdminView({profile,onLogout}){
     const prevDate=new Date(y,m-2,1);
     const prevMonth=prevDate.toISOString().slice(0,7);
     getRecordsByMonth(prevMonth).then(setPrevMonthRecs).catch(()=>{});
-    // Load extra hours for month
-    fetchExtraHoursByMonth(analysisMonth).then(setExtraHoursList).catch(()=>{});
-    setExtraHistoryLoaded(false);
+
     // Load payrolls
     supabase.from('payroll').select('*').eq('month',analysisMonth)
       .then(({data})=>setPayrolls(data||[])).catch(()=>{});
@@ -993,17 +847,7 @@ export default function AdminView({profile,onLogout}){
   };
 
   // Extra hours
-  const loadExtraHours=async(mn)=>{
-    try{
-      const month=mn||analysisMonth;
-      const byMonth=await fetchExtraHoursByMonth(month);
-      setExtraHoursList(byMonth);
-      // Also refresh full history
-      const all=await fetchAllExtraHours();
-      setExtraHistoryAll(all);
-      setExtraHistoryLoaded(true);
-    }catch(e){console.error('loadExtraHours error:',e);}
-  };
+
 
   const handleSaveExtra=async({id,empId,date,hours,description,multiplier,hourly_rate})=>{
     try{
@@ -1014,15 +858,7 @@ export default function AdminView({profile,onLogout}){
     }catch(e){showToast(e.message,'error');}
   };
 
-  // Load extra hours history when entering that tab
-  useEffect(()=>{
-    if(tab==='extra_hours'){
-      setExtraHistoryLoaded(false);
-      fetchAllExtraHours()
-        .then(all=>{setExtraHistoryAll(all);setExtraHistoryLoaded(true);})
-        .catch(()=>{setExtraHistoryLoaded(true);});
-    }
-  },[tab]);
+
 
   // Payroll
   const handleSavePayroll=async(data)=>{
@@ -1370,58 +1206,22 @@ export default function AdminView({profile,onLogout}){
                 <p className="text-sm text-gray-400">Liquidación mensual</p></div>
               <div className="flex gap-2">
                 <input type="month" value={analysisMonth} onChange={e=>setAnalysisMonth(e.target.value)} className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"/>
-                <button onClick={()=>setShowExtraHours(true)} className="px-4 py-2.5 rounded-2xl text-sm font-bold text-white" style={{background:'linear-gradient(135deg,#059669,#0d9488)'}}>
-                  + Hs extra
-                </button>
+
               </div>
             </div>
 
-            {/* Extra hours list */}
-            {extraHoursList.length>0&&(
-              <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-                <h3 className="font-bold text-gray-800 text-sm mb-3">Horas extra / remoto — {analysisMonth}</h3>
-                <div className="space-y-2">
-                  {extraHoursList.map(h=>(
-                    <div key={h.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-2xl">
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">{h.profiles?.name}</p>
-                        <p className="text-xs text-gray-400">{h.date} · {h.hours}hs {h.description&&`— ${h.description}`}</p>
-                      </div>
-                      <div className="text-right">
-                        {(()=>{
-                          const emp=employees.find(e=>e.id===h.employee_id)||h.profiles;
-                          const sched=empSchedMap?.[h.employee_id]||{};
-                          const scheduledDays=Object.values(sched).filter(s=>s?.active).length||20;
-                          const amt=calcExtraAmount(h,emp,scheduledDays);
-                          return(<>
-                            <p className="text-sm font-black text-emerald-600">
-                              {new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(amt)}
-                            </p>
-                            <Badge color={h.multiplier===2?'green':h.multiplier===1.5?'yellow':'gray'}>x{h.multiplier}</Badge>
-                          </>);
-                        })()}
-                      </div>
-                    </div>
-                  ))}
-                  {extraHoursList.length>0&&(()=>{
-                    const total=extraHoursList.reduce((sum,h)=>{
-                      const emp=employees.find(e=>e.id===h.employee_id);
-                      const sched=empSchedMap?.[h.employee_id]||{};
-                      const scheduledDays=Object.values(sched).filter(s=>s?.active).length||20;
-                      return sum+calcExtraAmount(h,emp,scheduledDays);
-                    },0);
-                    return(
-                      <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
-                        <span className="text-xs font-bold text-gray-500">Total horas extra del mes</span>
-                        <span className="text-sm font-black text-emerald-600">
-                          {new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(total)}
-                        </span>
-                      </div>
-                    );
-                  })()}
-                </div>
+            {/* Horas extra del mes */}
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-800 text-sm">Horas extra / remoto — {analysisMonth}</h3>
               </div>
-            )}
+              <HorasExtra
+                employees={employees}
+                empSchedMap={empSchedMap}
+                month={analysisMonth}
+                embedded={true}
+              />
+            </div>
 
             {/* Per-employee payroll cards */}
             <div className="grid gap-4 md:grid-cols-2">
@@ -1432,7 +1232,7 @@ export default function AdminView({profile,onLogout}){
                 const deductPct=stats.scheduled>0?Math.round((stats.absent/stats.scheduled)*100):0;
                 const deductAmt=Math.round((emp.salary||0)*(deductPct/100));
                 const schedDaysEmp=Object.values(empSchedMap?.[emp.id]||{}).filter(s=>s?.active).length||stats.scheduled||20;
-                const extraAmt=empExtras.reduce((acc,h)=>acc+calcExtraAmount(h,emp,schedDaysEmp),0);
+                const extraAmt=empExtras.reduce((acc,h)=>acc+calcMonto(h,emp,schedDaysEmp),0);
                 const estimated=(emp.salary||0)-deductAmt+extraAmt; // hourlyRateEmp already applied above
                 return(
                   <div key={emp.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
@@ -1658,160 +1458,14 @@ export default function AdminView({profile,onLogout}){
         )}
 
         {/* SETTINGS */}
-        {tab==='extra_hours'&&(()=>{
-          // Data loaded via useEffect when tab becomes active
-          const fmtM=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n);
-          const now=new Date();
-          const thisMonth=now.toISOString().slice(0,7);
-          const lastMonth=new Date(now.getFullYear(),now.getMonth()-1,1).toISOString().slice(0,7);
-          const thisWeekStart=new Date(now);thisWeekStart.setDate(now.getDate()-now.getDay());
-          const thisWeekISO=thisWeekStart.toISOString().split('T')[0];
-
-          let filtered=extraHistoryAll;
-          if(extraHistoryEmp!=='all') filtered=filtered.filter(h=>h.employee_id===extraHistoryEmp);
-          if(extraHistoryPeriod==='week') filtered=filtered.filter(h=>h.date>=thisWeekISO);
-          else if(extraHistoryPeriod==='month') filtered=filtered.filter(h=>h.date.startsWith(thisMonth));
-          else if(extraHistoryPeriod==='lastmonth') filtered=filtered.filter(h=>h.date.startsWith(lastMonth));
-
-          const totalHours=filtered.reduce((a,h)=>a+(h.hours||0),0);
-          const totalAmt=filtered.reduce((a,h)=>{
-            const emp=employees.find(e=>e.id===h.employee_id);
-            const sched=empSchedMap?.[h.employee_id]||{};
-            const days=Object.values(sched).filter(s=>s?.active).length||20;
-            const rate=emp?.extra_hour_rate||((emp?.salary||0)/(days*8));
-            return a+Math.round((h.hours||0)*rate*(h.multiplier||1));
-          },0);
-
-          return(
-            <div className="space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900" style={{fontFamily:"'Playfair Display',serif"}}>Horas extra</h2>
-                  <p className="text-sm text-gray-400">Historial completo de horas extra y remoto</p>
-                </div>
-                <button onClick={()=>setShowExtraHours(true)}
-                  className="px-4 py-2.5 rounded-2xl text-sm font-bold text-white"
-                  style={{background:'linear-gradient(135deg,#059669,#0d9488)'}}>
-                  + Agregar
-                </button>
-              </div>
-
-              {/* Filters */}
-              <div className="flex gap-2 flex-wrap">
-                <select value={extraHistoryEmp} onChange={e=>setExtraHistoryEmp(e.target.value)}
-                  className="px-3.5 py-2.5 rounded-2xl border border-gray-200 text-sm focus:outline-none bg-white flex-1">
-                  <option value="all">Todos los empleados</option>
-                  {employees.filter(e=>e.role==='employee').map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-                <div className="flex rounded-2xl border border-gray-200 overflow-hidden bg-white">
-                  {[['week','Esta semana'],['month','Este mes'],['lastmonth','Mes anterior'],['all','Todo']].map(([v,l])=>(
-                    <button key={v} onClick={()=>setExtraHistoryPeriod(v)}
-                      className={`px-3 py-2.5 text-xs font-bold transition-all ${extraHistoryPeriod===v?'bg-sky-500 text-white':'text-gray-500 hover:bg-gray-50'}`}>
-                      {l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Summary cards */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-white rounded-2xl border border-gray-100 p-3.5 text-center">
-                  <p className="text-xl font-black text-sky-600">{filtered.length}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Registros</p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-100 p-3.5 text-center">
-                  <p className="text-xl font-black text-violet-600">{totalHours.toFixed(1)}h</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Horas totales</p>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-100 p-3.5 text-center">
-                  <p className="text-lg font-black text-emerald-600">{fmtM(totalAmt)}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Total a pagar</p>
-                </div>
-              </div>
-
-              {/* List */}
-              {!extraHistoryLoaded?(
-                <div className="text-center py-10"><div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto"/></div>
-              ):filtered.length===0?(
-                <div className="bg-white rounded-3xl border border-gray-100 p-10 text-center">
-                  <p className="text-3xl mb-2">📋</p>
-                  <p className="text-sm font-bold text-gray-700">Sin registros</p>
-                  <p className="text-xs text-gray-400 mt-1">No hay horas extra para este filtro</p>
-                </div>
-              ):(
-                <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden">
-                  {/* Group by employee */}
-                  {(()=>{
-                    const grouped={};
-                    filtered.forEach(h=>{
-                      const key=h.employee_id;
-                      if(!grouped[key])grouped[key]=[];
-                      grouped[key].push(h);
-                    });
-                    return Object.entries(grouped).map(([empId,hrs])=>{
-                      const emp=employees.find(e=>e.id===empId);
-                      const sched=empSchedMap?.[empId]||{};
-                      const days=Object.values(sched).filter(s=>s?.active).length||20;
-                      const empTotal=hrs.reduce((a,h)=>a+calcExtraAmount(h,emp,days),0);
-                      const empHours=hrs.reduce((a,h)=>a+(h.hours||0),0);
-                      return(
-                        <div key={empId} className="border-b border-gray-50 last:border-0">
-                          {/* Employee header */}
-                          <div className="flex items-center justify-between px-5 py-3 bg-gray-50">
-                            <div className="flex items-center gap-2">
-                              <Avatar initials={emp?.avatar||'?'}/>
-                              <div>
-                                <p className="text-sm font-bold text-gray-900">{emp?.name||'?'}</p>
-                                <p className="text-xs text-gray-400">{empHours.toFixed(1)}h · {fmtM(rate)}/h</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-black text-emerald-600">{fmtM(empTotal)}</p>
-                              <p className="text-xs text-gray-400">{hrs.length} registro{hrs.length!==1?'s':''}</p>
-                            </div>
-                          </div>
-                          {/* Records */}
-                          {hrs.map(h=>{
-                            const amt=Math.round((h.hours||0)*rate*(h.multiplier||1));
-                            return(
-                              <div key={h.id} className="flex items-center justify-between px-5 py-3 border-t border-gray-50">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="text-xs font-bold text-gray-800">{h.hours}h</p>
-                                    {h.multiplier!==1&&<span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-lg font-bold">×{h.multiplier}</span>}
-                                    {h.description&&<p className="text-xs text-gray-500">— {h.description}</p>}
-                                  </div>
-                                  <p className="text-xs text-gray-400 mt-0.5">{new Date(h.date+'T12:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm font-black text-emerald-600">+{fmtM(amt)}</p>
-                                  <button onClick={()=>setEditExtraData(h)} className="p-1.5 text-gray-300 hover:text-sky-500 hover:bg-sky-50 rounded-xl">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                                  </button>
-                                  <button onClick={async()=>{
-                                    if(!window.confirm('¿Eliminar este registro?'))return;
-                                    try{
-                                      await deleteExtraHour(h.id);
-                                      await loadExtraHours(analysisMonth);
-                                      fetchAllExtraHours().then(all=>{setExtraHistoryAll(all);setExtraHistoryLoaded(true);}).catch(()=>{});
-                                      showToast('Registro eliminado');
-                                    }catch(e){showToast(e.message,'error');}
-                                  }} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {tab==='extra_hours'&&(
+          <HorasExtra
+            employees={employees}
+            empSchedMap={empSchedMap}
+            month={analysisMonth}
+            embedded={false}
+          />
+        )}
 
         {tab==='settings'&&(
           <div className="space-y-5 max-w-md">
@@ -2010,7 +1664,7 @@ export default function AdminView({profile,onLogout}){
       />}
       {showNewRec&&<NewRecordModal employees={employees} defaultDate={filterDate||localDateISO()} onSave={handleNewRec} onClose={()=>setShowNewRec(false)}/>}
       {auditRecId&&<AuditHistory recordId={auditRecId} onClose={()=>setAuditRecId(null)}/>}
-      {(showExtraHours||editExtraData)&&<ExtraHoursModal employees={employees} month={analysisMonth} empSchedMap={empSchedMap} editData={editExtraData} onClose={()=>{setShowExtraHours(false);setEditExtraData(null);}} onSave={handleSaveExtra}/>}
+
       {payrollEmp&&(
         <PayrollModal emp={payrollEmp} month={analysisMonth} stats={getStats(payrollEmp.id)}
           extraHours={extraHoursList.filter(h=>h.employee_id===payrollEmp.id)}

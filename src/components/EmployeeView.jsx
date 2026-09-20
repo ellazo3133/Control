@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import logoWhite from '../assets/logo-ellazo-white.png';
-import { calcExtraAmount } from '../lib/extraHours';
+import { calcMonto, calcRate } from './HorasExtra';
 import { usePWA } from '../hooks/usePWA';
 import MonthCalendar from './MonthCalendar';
 import VacacionesView from './VacacionesView';
@@ -902,7 +902,7 @@ export default function EmployeeView({profile,onLogout}) {
                   const baseSal = payroll?.base_salary || currentProfile?.salary || 0;
                   const scheduledDays = payroll?.days_scheduled || 20;
                   const baseHourlyRate = currentProfile?.extra_hour_rate || (baseSal/(scheduledDays*8));
-                  const totalExtraAmt = empExtras.reduce((a,h)=>a+calcExtraAmount(h,currentProfile,scheduledDays),0);
+                  const totalExtraAmt = empExtras.reduce((a,h)=>a+calcMonto(h,currentProfile,scheduledDays),0);
                   return(
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
@@ -918,7 +918,7 @@ export default function EmployeeView({profile,onLogout}) {
                       ):(
                         <div className="divide-y divide-gray-50">
                           {empExtras.map(h=>{
-                            const amt = calcExtraAmount(h, currentProfile, scheduledDays);
+                            const amt = calcMonto(h,currentProfile,scheduledDays);
                             return(
                               <div key={h.id} className="px-4 py-3">
                                 <div className="flex items-center justify-between">

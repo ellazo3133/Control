@@ -5,7 +5,7 @@ const fmtTime = iso => iso ? new Date(iso).toLocaleTimeString('es-AR',{hour:'2-d
 const fmtDate = s => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR') : '—';
 const timeToMins = t => { if(!t)return 0; const [h,m]=(t.slice(0,5)||'00:00').split(':').map(Number); return h*60+m; };
 const minsToHM = m => `${Math.floor(Math.abs(m)/60)}h ${Math.abs(m)%60}m`;
-import { calcExtraAmount } from '../lib/extraHours';
+import { calcMonto } from './HorasExtra';
 const fmtMoney = n => new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n||0);
 
 export default function ExportButton({ employees, records, schedMap, month, extraHours, payrolls }) {
@@ -58,7 +58,7 @@ export default function ExportButton({ employees, records, schedMap, month, extr
       const s = getStats(emp.id);
       const prl = payrolls?.find(p=>p.employee_id===emp.id);
       const deductAmt = Math.round((emp.salary||0)*(s.absent/Math.max(s.scheduled,1)));
-      const extraAmt = (extraHours||[]).filter(h=>h.employee_id===emp.id).reduce((a,h)=>a+calcExtraAmount(h,emp,s.scheduled),0);
+      const extraAmt = (extraHours||[]).filter(h=>h.employee_id===emp.id).reduce((a,h)=>a+calcMonto(h,emp,s.scheduled),0);
       rows.push([
         emp.name, emp.salary||0, s.scheduled, s.present, s.absent, s.justified,
         `${s.pct}%`, deductAmt, extraAmt,
@@ -106,7 +106,7 @@ export default function ExportButton({ employees, records, schedMap, month, extr
       const sched = schedMap[emp.id]||{};
       const prl = payrolls?.find(p=>p.employee_id===emp.id);
       const deductAmt = Math.round((emp.salary||0)*(s.absent/Math.max(s.scheduled,1)));
-      const extraAmt = (extraHours||[]).filter(h=>h.employee_id===emp.id).reduce((a,h)=>a+calcExtraAmount(h,emp,Math.max(s.scheduled,1)),0);
+      const extraAmt = (extraHours||[]).filter(h=>h.employee_id===emp.id).reduce((a,h)=>a+calcMonto(h,emp,Math.max(s.scheduled,1)),0);
       const totalNet = prl?.total_net || Math.round((emp.salary||0)-deductAmt+extraAmt);
 
       html += `<h2>${emp.name}</h2>`;
@@ -159,7 +159,7 @@ export default function ExportButton({ employees, records, schedMap, month, extr
       const baseSalary=emp.salary||0;
       const deductPct=s.scheduled>0?Math.round((s.absent/s.scheduled)*100):0;
       const deductAmt=Math.round(baseSalary*(deductPct/100));
-      const extraAmt=empExtras.reduce((a,h)=>a+calcExtraAmount(h,emp,s.scheduled||20),0);
+      const extraAmt=empExtras.reduce((a,h)=>a+calcMonto(h,emp,s.scheduled||20),0);
       const prl=payrolls?.find(p=>p.employee_id===emp.id);
       const net=prl?.total_net||Math.round(baseSalary-deductAmt+extraAmt);
       const netDebt=Math.max(0,(s.totalMissingMins||0)-(s.totalExtraMins||0));
