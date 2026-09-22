@@ -1184,7 +1184,7 @@ export default function AdminView({profile,onLogout}){
               {filteredRecs.map(rec=>{
                 const mins=rec.check_in&&rec.check_out?Math.round((new Date(rec.check_out)-new Date(rec.check_in))/60000):null;
                 return(
-                  <div key={rec.id} className={`px-5 py-4 ${rec.edit_reason==='Carga manual por admin'||rec.edited_by?'bg-sky-50/30':''}`}>
+                  <div key={rec.id} className={`px-5 py-4 ${rec.device_mismatch?'bg-red-50/40':rec.edit_reason==='Carga manual por admin'||rec.edited_by?'bg-sky-50/30':''}`}>
                     <div className="flex items-start gap-3">
                       {rec.profiles&&<Avatar initials={rec.profiles.avatar} size="sm"/>}
                       <div className="flex-1 min-w-0">

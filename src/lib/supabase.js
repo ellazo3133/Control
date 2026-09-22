@@ -275,7 +275,7 @@ export const getFilteredRecords = async ({ date, employeeId }) => {
   return data || [];
 };
 
-export const checkIn = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, bioCredId, minutesLate }) => {
+export const checkIn = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, bioCredId, minutesLate, deviceFingerprint, deviceMismatch }) => {
   const today = localDateISO();
   const now = new Date().toISOString();
 
@@ -296,6 +296,8 @@ export const checkIn = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, 
         check_in_method: 'biometric',
         status: 'present',
         minutes_late: minutesLate || 0,
+        device_fingerprint: deviceFingerprint || null,
+        device_mismatch: deviceMismatch || false,
       })
       .eq('id', existing.id)
       .select()
@@ -325,7 +327,7 @@ export const checkIn = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, 
   return data;
 };
 
-export const checkOut = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, bioCredId }) => {
+export const checkOut = async ({ employeeId, lat, lng, accuracy, distanceFromHQ, bioCredId, deviceFingerprint, deviceMismatch }) => {
   const existing = await getTodayRecord(employeeId);
   if (!existing?.check_in) throw new Error('No tenés entrada registrada hoy');
   if (existing?.check_out) throw new Error('Ya registraste tu salida hoy');

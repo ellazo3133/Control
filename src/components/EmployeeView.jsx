@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import logoWhite from '../assets/logo-ellazo-white.png';
 import { calcMonto, calcRate } from './HorasExtra';
+import { getDeviceFingerprint } from '../lib/deviceFingerprint';
 import { usePWA } from '../hooks/usePWA';
 import MonthCalendar from './MonthCalendar';
 import VacacionesView from './VacacionesView';
@@ -277,18 +278,22 @@ function StepModal({open,onClose,mode,profile,hq,records,setRecords,schedule,tod
     // Ejecutar check-in/out después de GPS (con o sin bio)
     const now=new Date().toISOString();
     const nowMins=new Date().getHours()*60+new Date().getMinutes();
+    // Check device fingerprint
+    const currentFingerprint=await getDeviceFingerprint().catch(()=>null);
+    const storedFingerprint=profile.device_fingerprint||currentProfile?.device_fingerprint;
+    const deviceMismatch=!!(storedFingerprint&&currentFingerprint&&storedFingerprint!==currentFingerprint);
     if(isIn){
       const effectiveSched=(todayException&&(todayException.type==='custom'||todayException.type==='half')&&todayException.start_time)
         ?{...sched,start_time:todayException.start_time,end_time:todayException.end_time||sched?.end_time}:sched;
       const expectedStart=effectiveSched?timeToMins(effectiveSched.start_time):0;
       const rawLate=Math.max(0,nowMins-expectedStart);
       const minutesLate=Math.max(0,rawLate-TOLERANCE_MINUTES);
-      await checkIn({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id,minutesLate});
+      await checkIn({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id,minutesLate,deviceFingerprint:currentFingerprint,deviceMismatch});
       const updated=await getTodayRecord(profile.id);
       const jornada=calcJornada(updated,effectiveSched);
       onDone(minutesLate>0?'checkin_tarde':'checkin_ok',jornada);
     } else {
-      await checkOut({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id});
+      await checkOut({employeeId:profile.id,lat:geoData.lat,lng:geoData.lng,accuracy:geoData.accuracy,distanceFromHQ:geoData.distance,bioCredId:profile.bio_cred_id,deviceFingerprint:currentFingerprint,deviceMismatch});
       const updated=await getTodayRecord(profile.id);
       const jornada=calcJornada(updated,sched);
       let tipo='checkout_ok';
@@ -448,7 +453,8 @@ export default function EmployeeView({profile,onLogout}) {
     setBioLoading(true);
     try{
       const credId=await registerBiometric(currentProfile.id,currentProfile.name);
-      const updated=await updateProfile(currentProfile.id,{bio_registered:true,bio_cred_id:credId});
+      const fingerprint=await getDeviceFingerprint();
+      const updated=await updateProfile(currentProfile.id,{bio_registered:true,bio_cred_id:credId,device_fingerprint:fingerprint});
       setCurrentProfile(updated);showToast('✓ Biometría registrada');
     }catch(e){showToast(e.message||'Error','error');}
     setBioLoading(false);
